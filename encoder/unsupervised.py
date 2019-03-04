@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from gensim.models import Word2Vec
 import numpy as np
 
@@ -73,6 +73,25 @@ class BagOfWordVectors(object):
 
         return vec_weight
 
+    def weighting_usif(self, sentence: List[str], alpha: float = 1E-4, scale: bool = False):
+
+        n_count = self._calc_total_freq()
+
+        def word_to_weight(word):
+            freq = self._word_to_freq(word)
+            if freq is None:
+                w = None
+            else:
+                w = alpha / (0.5*alpha + freq/n_count)
+            return w
+
+        vec_weight = np.array(list(filter(bool, map(word_to_weight, sentence))))
+        if scale:
+            vec_weight = vec_weight / np.sum(vec_weight)
+
+        return vec_weight
+
+
     def weighting_freq(self, sentence: List[str], alpha: float=1.0):
 
         vec_freq = np.array( list(map(self._word_to_freq, sentence)) )
@@ -99,11 +118,22 @@ class BagOfWordVectors(object):
 
         return vec_ret
 
-    def _usif_weighting_vector(self, sentence: List[str], normalize: bool=False, init_sims: bool=True):
-        raise NotImplementedError("not implemented yet.")
+    def _usif_weighting_vector(self, sentence: List[str], alpha: float, normalize: bool=False, init_sims: bool=True):
+
+        # mat_w2v: (n_token, n_dim)
+        mat_w2v = self.sentence_to_word_vectors(sentence, normalize=init_sims)
+        # dimension-wise normalization
+        mat_w2v = mat_w2v / np.linalg.norm(mat_w2v, axis=0, keepdims=True)
+        vec_weight = self.weighting_usif(sentence, alpha, scale=False)
+        mat_w2v = mat_w2v * vec_weight.reshape(-1,1)
+        vec_ret = np.mean(mat_w2v, axis=0)
+        if normalize:
+            vec_ret = vec_ret / np.linalg.norm(vec_ret)
+
+        return vec_ret
 
     def _calc_singular_vector_from_corpus(self, corpus: List[List[str]], method_name: str="sif", n_sv: int=1,
-                                          return_eigenvalues: bool=False, **kwargs):
+                                          return_singular_values: bool=False, **kwargs):
 
         n_sentence = len(corpus)
         mat_corpus = np.zeros(shape=(n_sentence, self._w2v.vector_size), dtype=np.float32)
@@ -120,7 +150,7 @@ class BagOfWordVectors(object):
         mat_ret = mat_v[:n_sv,:]
         vec_ret = vec_lambda[:n_sv]
 
-        if return_eigenvalues:
+        if return_singular_values:
             return vec_ret, mat_ret
         else:
             return mat_ret
@@ -131,7 +161,7 @@ class BagOfWordVectors(object):
         vec_s = self._sif_weighting_vector(sentence, alpha, init_sims=init_sims)
 
         if corpus is not None:
-            vec_u = self._calc_singular_vector_from_corpus(corpus, alpha=alpha)
+            vec_u = self._calc_singular_vector_from_corpus(corpus, method_name="sif", n_sv=1, alpha=alpha).flatten()
         else:
             vec_u = singular_vector
 
@@ -141,4 +171,29 @@ class BagOfWordVectors(object):
         if normalize:
             vec_s = vec_s / np.linalg.norm(vec_s)
 
+        return vec_s
+
+    def usif(self, sentence: List[str], alpha: float = 1E-4, corpus: Optional[List[List[str]]] = None,
+             tuple_singular_values_and_vectors: Optional[Tuple[np.ndarray, np.ndarray]] = None, 
+             normalize: bool=False, init_sims: bool=True):
+
+        vec_s = self._usif_weighting_vector(sentence, alpha, init_sims=init_sims)
+
+        if corpus is not None:
+            # s_vectors = (n_sv, n_dim)
+            s_values, s_vectors = self._calc_singular_vector_from_corpus(corpus, method_name="usif", n_sv=5, return_singular_values=True, alpha=alpha)
+        else:
+            if tuple_singular_values_and_vectors is None:
+                s_values, s_vectors = (None, None)
+            else:
+                s_values, s_vectors = tuple_singular_values_and_vectors
+
+        if s_values is not None:
+            vec_weight = (s_values**2 / np.sum(s_values**2)) * s_vectors.dot(vec_s)
+            vec_common = np.sum(s_vectors * vec_weight.reshape(-1,1), axis=0)
+            vec_s = vec_s - vec_common
+
+        if normalize:
+            vec_s = vec_s / np.linalg.norm(vec_s)
+            
         return vec_s
