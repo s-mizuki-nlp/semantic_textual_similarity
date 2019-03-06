@@ -73,7 +73,7 @@ class BagOfWordVectors(object):
 
         return vec_weight
 
-    def weighting_usif(self, sentence: List[str], alpha: float = 1E-4, scale: bool = False):
+    def weighting_usif(self, sentence: List[str], alpha: float = 1E-3, scale: bool = False):
 
         n_count = self._calc_total_freq()
 
@@ -118,7 +118,7 @@ class BagOfWordVectors(object):
 
         return vec_ret
 
-    def _usif_weighting_vector(self, sentence: List[str], alpha: float, normalize: bool=False, init_sims: bool=True):
+    def _usif_weighting_vector(self, sentence: List[str], alpha: float, normalize: bool=False, init_sims: bool=False):
 
         # mat_w2v: (n_token, n_dim)
         mat_w2v = self.sentence_to_word_vectors(sentence, normalize=init_sims)
@@ -173,9 +173,9 @@ class BagOfWordVectors(object):
 
         return vec_s
 
-    def usif(self, sentence: List[str], alpha: float = 1E-4, corpus: Optional[List[List[str]]] = None,
-             tuple_singular_values_and_vectors: Optional[Tuple[np.ndarray, np.ndarray]] = None, 
-             normalize: bool=False, init_sims: bool=True):
+    def usif(self, sentence: List[str], alpha: float = 1E-3, corpus: Optional[List[List[str]]] = None,
+             tup_singular_values_and_vectors: Optional[Tuple[np.ndarray, np.ndarray]] = None,
+             normalize: bool=False, init_sims: bool=False):
 
         vec_s = self._usif_weighting_vector(sentence, alpha, init_sims=init_sims)
 
@@ -183,10 +183,10 @@ class BagOfWordVectors(object):
             # s_vectors = (n_sv, n_dim)
             s_values, s_vectors = self._calc_singular_vector_from_corpus(corpus, method_name="usif", n_sv=5, return_singular_values=True, alpha=alpha)
         else:
-            if tuple_singular_values_and_vectors is None:
+            if tup_singular_values_and_vectors is None:
                 s_values, s_vectors = (None, None)
             else:
-                s_values, s_vectors = tuple_singular_values_and_vectors
+                s_values, s_vectors = tup_singular_values_and_vectors
 
         if s_values is not None:
             vec_weight = (s_values**2 / np.sum(s_values**2)) * s_vectors.dot(vec_s)
