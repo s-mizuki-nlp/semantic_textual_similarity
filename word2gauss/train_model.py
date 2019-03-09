@@ -34,6 +34,8 @@ def main():
 
     assert not(os.path.exists(args.model)), f"specified file already exists: {args.model}"
 
+    pprint(args.__dict__)
+
     vocab = Vocabulary.load(args.vocab)
     n_vocab = len(vocab)
     print(f"vocabulary size: {n_vocab}")
@@ -41,10 +43,24 @@ def main():
     kwargs = {} if args.kwargs is None else json.loads(args.kwargs)
     pprint(kwargs)
 
+    init_params = {
+        'mu0': 0.1,
+        'sigma_mean0': 1.0,
+        'sigma_std0': 0.01
+    }
+    model_params = {
+        "mu_max":10.0,
+        "sigma_min":0.1,
+        "sigma_max":10.0,
+        "eta":0.1,
+        "Closs":5.0
+    }
+
     print("start training...")
-    model = GaussianEmbedding(n_vocab, args.n_dim, covariance_type=args.cov_type, energy_type="KL")
+    model = GaussianEmbedding(n_vocab, args.n_dim, covariance_type=args.cov_type, energy_type="KL", init_params=init_params, **model_params)
     with io.open(args.corpus, mode="r") as corpus:
-        model.train(iter_pairs(corpus, vocab), n_workers=args.n_thread)
+        it = iter_pairs(corpus, vocab, batch_size=20, nsamples=2, window=5)
+        model.train(it, n_workers=args.n_thread)
 
     print(f"finished. saving models: {args.model}")
     model.save(args.model)
