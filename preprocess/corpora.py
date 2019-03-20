@@ -86,6 +86,12 @@ class Dictionary(object):
         return self._oov_id
 
     @property
+    def regular_id_range(self):
+        max_id = self.max_id
+        min_id = self.offset
+        return range(min_id+1, max_id+1)
+
+    @property
     def special_tokens(self) -> Dict[str, int]:
         return {token:self._token_to_id(token) for token in self._special_tokens}
 
@@ -169,6 +175,14 @@ class Dictionary(object):
         :return: (token_id, frequency)
         """
         return self._token_to_id(token), self._counter.get(token, 0)
+
+    def count(self, token: str) -> int:
+        """
+        returns token frequency in original corpus. if not present, returns 0
+        :param token: string
+        :return: frequency
+        """
+        return self._counter.get(token, 0)
 
     def _token_to_id(self, token: str) -> int:
         return self._token2id.get(token, self._oov_id)
