@@ -3,6 +3,8 @@
 
 from typing import List, Optional, Tuple
 from gensim.models import Word2Vec
+from allennlp.commands.elmo import ElmoEmbedder
+from preprocess.corpora import Dictionary
 import numpy as np
 
 
@@ -15,6 +17,22 @@ class BagOfWordVectors(object):
         if init_sims:
             self._w2v.init_sims(replace=False)
         self._total_freq = None
+        self._min_freq = None
+
+
+    @property
+    def vector_size(self):
+        return self._w2v.vector_size
+
+    def _mask_oov_word(self, sentence: List[str], oov_symbol: str="<oov>"):
+
+        def _mask(s: str):
+            if s in self._w2v.wv.vocab:
+                return s
+            else:
+                return oov_symbol
+
+        return list(map(_mask, sentence))
 
     def sentence_to_word_vectors(self, sentence: List[str], normalize: bool = False):
 
@@ -136,7 +154,7 @@ class BagOfWordVectors(object):
                                           return_singular_values: bool=False, **kwargs):
 
         n_sentence = len(corpus)
-        mat_corpus = np.zeros(shape=(n_sentence, self._w2v.vector_size), dtype=np.float32)
+        mat_corpus = np.zeros(shape=(n_sentence, self.vector_size), dtype=np.float32)
         for idx, sentence in enumerate(corpus):
             if method_name == "sif":
                 mat_corpus[idx] = self._sif_weighting_vector(sentence, **kwargs)
@@ -197,3 +215,87 @@ class BagOfWordVectors(object):
             vec_s = vec_s / np.linalg.norm(vec_s)
             
         return vec_s
+
+
+
+class ELMoEmbeddings(BagOfWordVectors):
+
+    def __init__(self, model_elmo: ElmoEmbedder, dictionary: Dictionary, extract_layer_ids: Tuple[int] = (2,)):
+
+        self._elmo = model_elmo
+        self._dictionary = dictionary
+        self._elmo_layer_ids = extract_layer_ids
+        self._total_freq = None
+        self._min_freq = None
+        self._vector_size = self._elmo.elmo_bilm.get_output_dim() * len(extract_layer_ids)
+
+        n_layers = model_elmo.elmo_bilm.num_layers
+        assert max(extract_layer_ids) < n_layers, f"valid layer id is 0 to {n_layers-1}."
+
+    def _mask_oov_word(self, sentence: List[str], oov_symbol: str="<oov>"):
+
+        def _mask(s: str):
+            if s in self._dictionary.vocab:
+                return s
+            else:
+                return oov_symbol
+
+        return list(map(_mask, sentence))
+
+    @property
+    def vector_size(self):
+        return self._vector_size
+
+    def sentence_to_word_vectors(self, sentence: List[str], normalize: bool = False):
+        """
+        encode sentence into word vectors.
+        you can specify which ELMo layer to extract by passing layer ids to `extract_layer_ids` argument.
+        output of each layer will be concatenated horizontally.
+
+        :param sentence: list of tokens.
+        :param extract_layer_ids: tuple of layer ids. max id will be 2.
+        :param normalize:
+        :return: word vectors. size will be (n_tokens, n_dim*len(extract_layer_ids))
+        """
+        mat_w2v = self._elmo.embed_sentence(sentence)
+        mat_w2v = np.hstack(mat_w2v[self._elmo_layer_ids,:,:])
+
+        if normalize:
+            mat_w2v = mat_w2v / np.linalg.norm(mat_w2v, axis=1, keepdims=True)
+
+        return mat_w2v
+
+    def _remove_oov_word(self, sentence: List[str]):
+
+        def _mask(s: str):
+            if s in self._dictionary.vocab:
+                return s
+            else:
+                return None
+
+        return list(filter(bool, map(_mask, sentence)))
+
+    def _calc_total_freq(self):
+        if self._total_freq is not None:
+            return self._total_freq
+
+        ret = sum(self._dictionary._counter.values())
+        self._total_freq = ret
+        return ret
+
+    def _calc_min_freq(self):
+        if self._min_freq is not None:
+            return self._min_freq
+        ret = min(self._dictionary._counter.values())
+        return ret
+
+    def _word_to_freq(self, word):
+        """
+        if oov, it returns minimum frequency. else it returns word frequency within original corpus which is used to build dictionary.
+        """
+        ret = max(self._dictionary.count(word), self._calc_min_freq())
+        return ret
+
+    def weighting_unif(self, sentence: List[str]):
+        n_word = len(sentence)
+        return np.full(shape=n_word, fill_value=1./n_word, dtype=np.float64)
