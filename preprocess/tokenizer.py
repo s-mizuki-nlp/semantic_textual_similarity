@@ -5,6 +5,7 @@ import os, sys, io
 from abc import ABCMeta, abstractmethod
 from typing import List
 from .wordpiece import FullTokenizer
+from nltk.tokenize import TreebankWordTokenizer
 
 class AbstractTokenizer(object):
 
@@ -52,4 +53,16 @@ class WordPieceTokenizer(AbstractTokenizer):
         self._tokenizer = FullTokenizer(vocab_file, do_lower_case)
 
     def tokenize_single(self, sentence):
+        return self._tokenizer.tokenize(sentence)
+
+
+class TreeBankWordTokenizerWrapper(AbstractTokenizer):
+
+    def __init__(self, do_lower_case = False):
+        self._tokenizer = TreebankWordTokenizer()
+        self._do_lower_case = do_lower_case
+
+    def tokenize_single(self, sentence: str):
+        if self._do_lower_case:
+            sentence = sentence.lower()
         return self._tokenizer.tokenize(sentence)
