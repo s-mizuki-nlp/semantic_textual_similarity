@@ -1,6 +1,8 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
+
+
 import os, sys, io
 from vocab import Vocabulary
 import argparse
@@ -27,7 +29,7 @@ def main():
     assert not(os.path.exists(args.model)), f"specified file already exists: {args.model}"
 
     with io.open(args.corpus, mode="r") as corpus:
-        v = Vocabulary()
+        v = Vocabulary(table_size=int(2E7))
         v.create(corpus, [(args.n_vocab, args.n_min_freq, args.n_min_freq)])
 
     print(f"finished. saving models: {args.model}")

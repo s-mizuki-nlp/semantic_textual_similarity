@@ -34,17 +34,36 @@ def main():
 
     assert not(os.path.exists(args.model)), f"specified file already exists: {args.model}"
 
-    vocab = Vocabulary.load(args.vocab)
+    pprint(args.__dict__)
+
+    vocab_params = {
+        "power":0.75
+    }
+    vocab = Vocabulary.load(args.vocab, **vocab_params)
     n_vocab = len(vocab)
     print(f"vocabulary size: {n_vocab}")
 
     kwargs = {} if args.kwargs is None else json.loads(args.kwargs)
     pprint(kwargs)
 
+    init_params = {
+        'mu0': 0.1,
+        'sigma_mean0': 1.0,
+        'sigma_std0': 0.01
+    }
+    model_params = {
+        "mu_max":1.0,
+        "sigma_min":0.1,
+        "sigma_max":10.0,
+        "eta":0.01,
+        "Closs":4.0
+    }
+
     print("start training...")
-    model = GaussianEmbedding(n_vocab, args.n_dim, covariance_type=args.cov_type, energy_type="KL")
+    model = GaussianEmbedding(n_vocab, args.n_dim, covariance_type=args.cov_type, energy_type="KL", init_params=init_params, **model_params)
     with io.open(args.corpus, mode="r") as corpus:
-        model.train(iter_pairs(corpus, vocab), n_workers=args.n_thread)
+        it = iter_pairs(corpus, vocab, batch_size=20, nsamples=20, window=5)
+        model.train(it, n_workers=args.n_thread)
 
     print(f"finished. saving models: {args.model}")
     model.save(args.model)
@@ -52,11 +71,16 @@ def main():
     # sanity check
     print("done. now execute sanity check...")
 
+    def ln_det_sigma(word):
+        vec_sigma = model.sigma[vocab.word2id(word)]
+        return np.sum(np.log(vec_sigma))
+    
     w = "food"
     print(f"word: {w}")
     lst_result = model.nearest_neighbors(w, vocab=vocab, sort_order="sigma", num=100)
     df_result = pd.DataFrame(lst_result)
-    print(df_result.head(n=10))
+    df_result["sigma_ln_det"] = df_result["word"].map(ln_det_sigma)
+    print(df_result.sort_values(by="sigma_ln_det", ascending=False).head(n=10))
 
     print("finished. good-bye.")
 
