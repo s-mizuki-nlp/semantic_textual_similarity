@@ -220,17 +220,29 @@ class BagOfWordVectors(object):
 
 class ELMoEmbeddings(BagOfWordVectors):
 
-    def __init__(self, model_elmo: ElmoEmbedder, dictionary: Dictionary, extract_layer_ids: Tuple[int] = (2,)):
+    def __init__(self, model_elmo: ElmoEmbedder, dictionary: Dictionary, extract_layer_ids: Tuple[int] = (2,),
+                 pooling_method: str = "mean"):
 
         self._elmo = model_elmo
         self._dictionary = dictionary
         self._elmo_layer_ids = extract_layer_ids
         self._total_freq = None
         self._min_freq = None
-        self._vector_size = self._elmo.elmo_bilm.get_output_dim() * len(extract_layer_ids)
 
         n_layers = model_elmo.elmo_bilm.num_layers
         assert max(extract_layer_ids) < n_layers, f"valid layer id is 0 to {n_layers-1}."
+
+        lst_accepted_pooling_method = "mean,max,concat".split(",")
+        assert pooling_method in lst_accepted_pooling_method, "invalid pooling method was specified. valid methods are: " + ",".join(lst_accepted_pooling_method)
+        if pooling_method == "mean":
+            self._pooling_function = lambda t_mat_w2v: np.mean(t_mat_w2v[self._elmo_layer_ids,:,:], axis=0)
+            self._vector_size = self._elmo.elmo_bilm.get_output_dim()
+        elif pooling_method == "max":
+            self._pooling_function = lambda t_mat_w2v: np.max(t_mat_w2v[self._elmo_layer_ids,:,:], axis=0)
+            self._vector_size = self._elmo.elmo_bilm.get_output_dim()
+        elif pooling_method == "concat":
+            self._pooling_function = lambda t_mat_w2v: np.hstack(t_mat_w2v[self._elmo_layer_ids,:,:])
+            self._vector_size = self._elmo.elmo_bilm.get_output_dim() * len(extract_layer_ids)
 
     def _mask_oov_word(self, sentence: List[str], oov_symbol: str="<oov>"):
 
@@ -246,7 +258,7 @@ class ELMoEmbeddings(BagOfWordVectors):
     def vector_size(self):
         return self._vector_size
 
-    def sentence_to_word_vectors(self, sentence: List[str], normalize: bool = False):
+    def sentence_to_word_vectors(self, sentence: List[str], normalize: bool = False, subtract_sentence_mean: bool = False):
         """
         encode sentence into word vectors.
         you can specify which ELMo layer to extract by passing layer ids to `extract_layer_ids` argument.
@@ -258,10 +270,13 @@ class ELMoEmbeddings(BagOfWordVectors):
         :return: word vectors. size will be (n_tokens, n_dim*len(extract_layer_ids))
         """
         mat_w2v = self._elmo.embed_sentence(sentence)
-        mat_w2v = np.hstack(mat_w2v[self._elmo_layer_ids,:,:])
+        # mat_w2v = np.hstack(mat_w2v[self._elmo_layer_ids,:,:])
+        mat_w2v = self._pooling_function(mat_w2v)
 
         if normalize:
             mat_w2v = mat_w2v / np.linalg.norm(mat_w2v, axis=1, keepdims=True)
+        if subtract_sentence_mean:
+            mat_w2v = mat_w2v - np.mean(mat_w2v, axis=0, keepdims=True)
 
         return mat_w2v
 

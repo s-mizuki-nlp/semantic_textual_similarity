@@ -9,7 +9,6 @@ from typing import Optional
 
 # from .mixture import MultiVariateGaussianMixture
 
-
 # Earth Mover's Distance.
 def earth_mover_distance(vec_p: np.array, vec_q: np.array, mat_dist: Optional[np.ndarray] = None,
                          mat_x: Optional[np.ndarray] = None, mat_y: Optional[np.ndarray] = None,
