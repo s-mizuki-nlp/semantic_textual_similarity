@@ -6,6 +6,7 @@ from abc import ABCMeta, abstractmethod
 from typing import List
 from .wordpiece import FullTokenizer
 from nltk.tokenize import TreebankWordTokenizer
+from nltk.tokenize.moses import MosesTokenizer
 
 class AbstractTokenizer(object):
 
@@ -58,7 +59,7 @@ class WordPieceTokenizer(AbstractTokenizer):
 
 class TreeBankWordTokenizerWrapper(AbstractTokenizer):
 
-    def __init__(self, do_lower_case = False):
+    def __init__(self, do_lower_case: bool = False):
         self._tokenizer = TreebankWordTokenizer()
         self._do_lower_case = do_lower_case
 
@@ -66,3 +67,15 @@ class TreeBankWordTokenizerWrapper(AbstractTokenizer):
         if self._do_lower_case:
             sentence = sentence.lower()
         return self._tokenizer.tokenize(sentence)
+
+class MosesTokenizerWrapper(AbstractTokenizer):
+
+    def __init__(self, do_lower_case: bool = False, escape: bool = False):
+        self._tokenizer = MosesTokenizer()
+        self._do_lower_case = do_lower_case
+        self._escape = escape
+
+    def tokenize_single(self, sentence: str):
+        if self._do_lower_case:
+            sentence = sentence.lower()
+        return self._tokenizer.tokenize(sentence, escape=self._escape)
