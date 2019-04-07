@@ -6,7 +6,7 @@ from abc import ABCMeta, abstractmethod
 from typing import List
 from .wordpiece import FullTokenizer
 from nltk.tokenize import TreebankWordTokenizer
-from nltk.tokenize.moses import MosesTokenizer
+from sacremoses import MosesTokenizer
 
 class AbstractTokenizer(object):
 
