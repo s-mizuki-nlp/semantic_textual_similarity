@@ -30,6 +30,7 @@ def _parse_args():
     parser.add_argument("--dictionary", "-d", required=True, type=str, help="path to the pre-defined dictionary.")
     parser.add_argument("--do_lower_case", required=False, type=bool, default=False, help="lowercase or not. default: False")
     parser.add_argument("--n_minibatch", required=False, type=int, default=128, help="minibatch size when encoding sentences.")
+    parser.add_argument("--cuda_device", required=False, type=int, default=-1, help="cuda device ID. default: -1 (=disabled)")
     parser.add_argument("--save", "-s", required=True, type=str, help="path to the trained ELMo2Gauss encoder.")
     args = parser.parse_args()
 
@@ -45,7 +46,7 @@ def main():
     print(f"ELMo2Gauss model will be saved as: {args.save}")
 
     # ELMo embedder
-    elmo = ElmoEmbedder(args.elmo_config, args.elmo_weight)
+    elmo = ElmoEmbedder(args.elmo_config, args.elmo_weight, args.cuda_device)
     # pre-defined vocabulary
     dictionary = Dictionary.load(args.dictionary)
     # corpus and tokenizer
