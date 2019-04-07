@@ -62,6 +62,9 @@ class Dictionary(object):
             self._id2token[idx] = token
             idx += 1
 
+    def __len__(self):
+        return self.n_vocab
+
     @property
     def n_vocab(self) -> int:
         return len(self._token2id)
