@@ -29,6 +29,7 @@ class ELMo2Gauss(object):
         self._elmo_layer_ids = extract_layer_ids
         self._pooling_method = pooling_method
         self._verbose = verbose
+        self._init_sims = False
 
         n_layers = model_elmo.elmo_bilm.num_layers
         assert max(extract_layer_ids) < n_layers, f"valid layer id is 0 to {n_layers-1}."
@@ -119,6 +120,7 @@ class ELMo2Gauss(object):
             mat_scale = np.linalg.norm(mat_mu, axis=-1, keepdims=True)
             mat_mu /= mat_scale
             mat_sigma /= mat_scale**2
+            self._init_sims = True
             return True
 
         # create new instance
@@ -132,6 +134,7 @@ class ELMo2Gauss(object):
         mat_scale = np.linalg.norm(mat_mu, axis=-1, keepdims=True)
         mat_mu /= mat_scale
         mat_sigma /= mat_scale**2
+        new_instance._init_sims = True
 
         return new_instance
 
@@ -161,6 +164,21 @@ class ELMo2Gauss(object):
 
         return mat_w2v
 
+    def sentence_to_gaussians(self, sentence: List[str]):
+        """
+        encode sentence into list of gaussian distributions.
+        WARNING: mean and covariance is context-independent.
+
+        :param sentence: list of tokens.
+        :return: list of MultiVariateNormal class instances.
+        """
+        # p_x = MultiVariateNormal()
+
+        pass
+
+    def sentence_to_gaussian_mixture(self, sentence: List[str]):
+        pass
+
     def sentence_to_word_vectors_batch(self, sentences: List[List[str]], normalize: bool = False, subtract_sentence_mean: bool = False):
         """
         batch process version of sentence encoding method.
@@ -182,6 +200,7 @@ class ELMo2Gauss(object):
     def train(self, dataset_feeder: GeneralSentenceFeeder,
               normalize: bool = False, subtract_sentence_mean: bool = False, ddof: int = 0):
 
+        assert normalize == False, "experimental: do not enable word-level normalization."
         assert ddof >= 0, "degree of freedom must be positive integer."
         assert dataset_feeder._dictionary is None, "dataset feeder mustn't have dictionary instance."
         if dataset_feeder._validation_split != 0.0:
