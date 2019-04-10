@@ -3,7 +3,7 @@
 
 import os, sys, io
 import warnings
-from typing import Optional, Union, List, Any
+from typing import Optional, Union, List, Any, Tuple
 import pickle
 import numpy as np
 import scipy as sp
@@ -16,50 +16,40 @@ vector = np.array
 matrix = np.ndarray
 tensor = np.ndarray
 
+from .mixture import MultiVariateGaussianMixture, _mvn_isotropic_logpdf
+
 
 class MultiVariateNormal(object):
 
     __EPS = 1E-5
 
-    def __init__(self, vec_alpha: vector, mat_mu: matrix,
-                 tensor_cov: Optional[tensor] = None, mat_cov: Optional[matrix] = None, vec_std: Optional[vector] = None):
-        self._n_k = len(vec_alpha)
-        self._n_dim = mat_mu.shape[1]
-        self._alpha = np.minimum(1.0 - self.__EPS, np.maximum(self.__EPS, vec_alpha))
-        self._ln_alpha = np.log(self._alpha)
-        self._mu = mat_mu
-        if tensor_cov is not None:
-            self._cov = tensor_cov
+    def __init__(self, vec_mu: vector,
+                 mat_cov: Optional[matrix] = None, vec_cov: Optional[vector] = None, scalar_cov: Optional[float] = None):
+        self._n_dim = len(vec_mu)
+        self._mu = vec_mu
+        if mat_cov is not None:
+            self._cov = mat_cov
             self._is_cov_diag = False
             self._is_cov_iso = False
-        elif mat_cov is not None:
-            self._cov = np.stack([np.diag(vec_var) for vec_var in mat_cov])
+        elif vec_cov is not None:
+            self._cov = np.diag(vec_cov)
             self._is_cov_diag = True
             self._is_cov_iso = False
-        elif vec_std is not None:
-            self._cov = np.stack([(std**2) * np.eye(self._n_dim) for std in vec_std])
+        elif scalar_cov is not None:
+            self._cov = np.eye(self._n_dim)*scalar_cov
             self._is_cov_diag = True
             self._is_cov_iso = True
         else:
-            raise AttributeError("either `tensor_cov` or `mat_cov` or `vec_std` must be specified.")
+            raise AttributeError("either `mat_cov` or `vec_cov` or `scalar_cov` must be specified.")
         self._validate()
 
     def _validate(self):
-        msg = "number of mixture component mismatch."
-        assert len(self._alpha) == self._n_k, msg
-        assert self._mu.shape[0] == self._n_k, msg
-        assert self._cov.shape[0] == self._n_k, msg
-
         msg = "dimensionality mismatch."
-        assert self._mu.shape[1] == self._n_dim, msg
+        assert len(self._mu) == self._n_dim, msg
+        assert self._cov.shape[0] == self._n_dim, msg
         assert self._cov.shape[1] == self._n_dim, msg
-        assert self._cov.shape[2] == self._n_dim, msg
 
         return True
-
-    @property
-    def n_component(self):
-        return self._n_k
 
     @property
     def n_dim(self):
@@ -74,73 +64,74 @@ class MultiVariateNormal(object):
         return self._is_cov_iso
 
     @property
-    def mean(self):
-        return np.sum(self._mu * self._alpha.reshape(-1,1), axis=0)
+    def mean(self) -> np.ndarray:
+        return self._mu
 
     @property
-    def covariance(self):
-        sum_cov = np.sum(self._cov * self._alpha.reshape(-1,1,1), axis=0)
-        sum_mu = np.zeros((self.n_dim, self.n_dim), dtype=self._mu.dtype)
-        for i in range(self.n_component):
-            for j in range(self.n_component):
-                a_i, a_j = self._alpha[i], self._alpha[j]
-                mu_i, mu_j = self._mu[i].reshape(-1,1), self._mu[j].reshape(-1,1)
+    def covariance(self) -> np.ndarray:
+        return self._cov
 
-                if i == j:
-                    sum_mu += a_i * (1. - a_i) * mu_i.dot(mu_i.T)
-                else:
-                    sum_mu -= a_i * a_j * mu_i.dot(mu_j.T)
-        return sum_cov + sum_mu
+    @property
+    def entropy(self) -> float:
+        e = multivariate_normal(mean=self._mu, cov=self._cov).entropy()
+        return e
+
+    @property
+    def normalization_term(self) -> float:
+        z = - (self.entropy - 0.5 * self._n_dim)
+        return z
 
     @classmethod
-    def random_generation(cls, n_k: int, n_dim: int, covariance_type="spherical", mu_range=None, cov_range=None):
-        lst_available_covariance_type = "identity,spherical,diagonal".split(",")
+    def random_generation(cls, n_dim: int, covariance_type="diagonal", mu_range=None, cov_range=None):
+        lst_available_covariance_type = "identity,isotropic,diagonal,full".split(",")
         msg = "argument `covariance_type must be one of those: %s" % "/".join(lst_available_covariance_type)
         assert covariance_type in lst_available_covariance_type, msg
 
         rng_mu = [-2, 2] if mu_range is None else mu_range
         rng_cov = [0.2, 0.5] if cov_range is None else cov_range
 
-        vec_alpha = np.random.dirichlet(alpha=np.ones(n_k)*n_k)
-        mat_mu = np.random.uniform(low=rng_mu[0], high=rng_mu[1], size=n_k*n_dim).reshape((n_k, n_dim))
-        if covariance_type == "identity":
-            tensor_cov = np.array([np.eye(n_dim) for k in range(n_k)])
-            vec_std = np.ones(n_k, dtype=np.float)
-            ret = cls(vec_alpha, mat_mu, vec_std=vec_std)
-        elif covariance_type == "spherical":
-            vec_std = np.sqrt(np.random.uniform(low=rng_cov[0], high=rng_cov[1], size=n_k))
-            ret = cls(vec_alpha, mat_mu, vec_std=vec_std)
+        vec_mu = np.random.uniform(low=rng_mu[0], high=rng_mu[1], size=n_dim)
+        if covariance_type == "isotropic":
+            scalar_cov = np.random.uniform(low=rng_cov[0], high=rng_cov[1], size=1)
+            ret = cls(vec_mu, scalar_cov=scalar_cov)
         elif covariance_type == "diagonal":
-            mat_cov = np.vstack([np.random.uniform(low=rng_cov[0], high=rng_cov[1], size=n_dim) for k in range(n_k)])
-            ret = cls(vec_alpha, mat_mu, mat_cov=mat_cov)
+            vec_cov = np.random.uniform(low=rng_cov[0], high=rng_cov[1], size=n_dim)
+            ret = cls(vec_mu, vec_cov=vec_cov)
+        elif covariance_type == "identity":
+            scalar_cov = 1.
+            ret = cls(vec_mu, scalar_cov=scalar_cov)
+        elif covariance_type == "full":
+            # sample from inverse-wishart distribution.
+            scale_param = np.diag(np.random.uniform(low=rng_cov[0], high=rng_cov[1], size=n_dim))
+            dof = n_dim + 2
+            mat_cov = sp.stats.invwishart.rvs(df=dof, scale=scale_param)
+            ret = cls(vec_mu, mat_cov=mat_cov)
         else:
             raise NotImplementedError("unexpected input.")
 
         return ret
 
     @classmethod
-    def to_tensor(cls, lst_of_tuple, normalize_alpha=False):
-        alpha = np.array([tup[0] for tup in lst_of_tuple])
-        if normalize_alpha:
-            alpha /= np.sum(alpha)
-        mu = np.stack(tup[1] for tup in lst_of_tuple)
-        cov = np.stack(tup[2] for tup in lst_of_tuple)
+    def tuple_to_tensor(cls, lst_of_tuple):
+        mu = np.stack(tup[0] for tup in lst_of_tuple)
+        cov = np.stack(tup[1] for tup in lst_of_tuple)
 
-        return alpha, mu, cov
+        return mu, cov
 
     @classmethod
-    def to_tuple(cls, vec_alpha: vector, mat_mu: matrix, tensor_cov: tensor):
+    def tensor_to_tuple(cls, mat_mu: matrix, tensor_cov: tensor):
         lst_ret = []
-        n_k = len(vec_alpha)
+        n_k = mat_mu.shape[0]
         for k in range(n_k):
-            lst_ret.append((vec_alpha[k], mat_mu[k], tensor_cov[k]))
+            lst_ret.append((mat_mu[k], tensor_cov[k]))
 
         return lst_ret
 
     @classmethod
-    def concatenate(cls, lst_distribution: List["MultiVariateGaussianMixture"], lst_weight: Optional[Union[List[float], np.ndarray]] = None):
+    def mvn_to_gmm(cls, lst_distribution: List["MultiVariateNormal"],
+                   lst_weight: Optional[Union[List[float], np.ndarray]] = None) -> "MultiVariateGaussianMixture":
         """
-        concatenate multiple gaussian mixture distribution into single mixture distribution.
+        concatenate multiple normal distributions into single gaussian mixture distribution.
 
         :param lst_distribution: list of gaussian mixture instances.
         :param lst_weight: list of relative weights that are applied to each instance.
@@ -158,14 +149,18 @@ class MultiVariateNormal(object):
         assert all([dist.n_dim == n_dim for dist in lst_distribution]), "dimension size mismatch detected."
 
         # concatenate gaussian mixture parameters
-        vec_alpha = np.concatenate([w*dist._alpha for dist, w in zip(lst_distribution, lst_weight)])
-        mat_mu = np.vstack([dist._mu for dist in lst_distribution])
-        if all([dist.is_cov_diag for dist in lst_distribution]):
-            mat_cov = np.vstack([np.diag(dist._cov) for dist in lst_distribution])
-            dist_new = cls(vec_alpha=vec_alpha, mat_mu=mat_mu, mat_cov=mat_cov)
+        vec_alpha = lst_weight
+        mat_mu = np.vstack([dist.mean for dist in lst_distribution])
+        if all([dist.is_cov_iso for dist in lst_distribution]):
+            vec_cov = np.array([dist.covariance[0][0] for dist in lst_distribution])
+            dist_new = MultiVariateGaussianMixture(vec_alpha=vec_alpha, mat_mu=mat_mu, vec_std=np.sqrt(vec_cov))
+        elif all([dist.is_cov_diag for dist in lst_distribution]):
+            mat_cov = np.vstack([np.diag(dist.covariance) for dist in lst_distribution])
+            dist_new = MultiVariateGaussianMixture(vec_alpha=vec_alpha, mat_mu=mat_mu, mat_cov=mat_cov)
         else:
-            tensor_cov = np.vstack([dist._cov for dist in lst_distribution])
-            dist_new = cls(vec_alpha=vec_alpha, mat_mu=mat_mu, tensor_cov=tensor_cov)
+            # tensor_cov = [n_component, n_dim, n_dim]
+            tensor_cov = np.stack([dist.covariance for dist in lst_distribution])
+            dist_new = MultiVariateGaussianMixture(vec_alpha=vec_alpha, mat_mu=mat_mu, tensor_cov=tensor_cov)
 
         return dist_new
 
@@ -175,13 +170,15 @@ class MultiVariateNormal(object):
             pickle.dump(self, ofs)
 
     @classmethod
-    def load(cls, file_path: str) -> "MultiVariateGaussianMixture":
+    def load(cls, file_path: str) -> "MultiVariateNormal":
         with io.open(file_path, mode="rb") as ifs:
             obj = pickle.load(ifs)
         obj.__class__ = cls
         return obj
 
-    def density_plot(self, fig_and_ax=None, vis_range=None, figsize=None, lst_annotations=None, n_mesh_bin=100, cmap="Reds", **kwargs):
+    def density_plot(self, fig_and_ax=None, vis_range: Optional[Tuple[float]] = None,
+                     figsize: Optional[Tuple[float]] = None,
+                     annotation: Optional[str] = None, n_mesh_bin: int = 100, cmap: str = "Reds", **kwargs):
         assert self._n_dim == 2, "visualization isn't available except 2-dimensional distribution."
 
         rng_default = np.max(np.abs(self._mu)) + 2. * np.sqrt(np.max(self._cov))
@@ -199,67 +196,54 @@ class MultiVariateNormal(object):
 
         ax.pcolormesh(mesh_x, mesh_y, value_z.reshape(mesh_x.shape), cmap=cmap, **kwargs)
 
-        if lst_annotations is not None:
-            if len(lst_annotations) != self.n_component:
-                warnings.warn(f"specified `lst_annotation` length doesn't match with the number of mixture components: {self.n_component}")
-            else:
-                # annotate texts
-                for token, (x_val, y_val) in zip(lst_annotations, self._mu):
-                    ax.annotate(token, (x_val, y_val))
+        if annotation is not None:
+            ax.annotate(annotation, (self._mu[0], self._mu[1]))
 
         return fig, ax
 
-    def pdf(self, vec_x: vector):
-        prob = 0.
-        for k in range(self._n_k):
-            prob += self._alpha[k]*multivariate_normal.pdf(vec_x, self._mu[k], self._cov[k])
+    def pdf(self, vec_x: Union[vector, matrix]) -> np.ndarray:
+        if vec_x.ndim == 1:
+            prob = multivariate_normal.pdf(vec_x, self._mu, self._cov)
+        else:
+            prob = np.array([multivariate_normal.pdf(x, self._mu, self._cov) for x in vec_x])
         return prob
 
-    def logpdf(self, vec_x: vector):
-        ln_prob = 0.0
-        # if vec_x.ndim == 1:
-        #     if self._is_cov_diag:
-        #         v_ln_prob = self._ln_alpha + np.array([_mvn_isotropic_logpdf(vec_x, self._mu[k], self._cov[k]) for k in range(self._n_k)])
-        #     else:
-        #         v_ln_prob = self._ln_alpha + np.array([multivariate_normal.logpdf(vec_x, self._mu[k], self._cov[k]) for k in range(self._n_k)])
-        #     ln_prob = logsumexp(v_ln_prob)
-        # elif vec_x.ndim == 2:
-        #     n_size = vec_x.shape[0]
-        #     m_ln_prob = np.empty(shape=(n_size, self._n_k), dtype=np.float)
-        #     for k in range(self._n_k):
-        #         if self._is_cov_diag:
-        #             m_ln_prob[:,k] = self._ln_alpha[k] + _mvn_isotropic_logpdf(vec_x, self._mu[k], self._cov[k])
-        #         else:
-        #             m_ln_prob[:,k] = self._ln_alpha[k] + multivariate_normal.logpdf(vec_x, self._mu[k], self._cov[k])
-        #     ln_prob = logsumexp(m_ln_prob, axis=1)
+    def logpdf(self, vec_x: Union[vector, matrix]) -> np.ndarray:
+        if vec_x.ndim == 1:
+            if self._is_cov_diag:
+                ln_prob = _mvn_isotropic_logpdf(vec_x, self._mu, self._cov)
+            else:
+                ln_prob = multivariate_normal.logpdf(vec_x, self._mu, self._cov)
+        elif vec_x.ndim == 2:
+            if self._is_cov_diag:
+                ln_prob = np.array([_mvn_isotropic_logpdf(x, self._mu, self._cov) for x in vec_x])
+            else:
+                ln_prob = np.array([multivariate_normal.logpdf(x, self._mu, self._cov) for x in vec_x])
+        else:
+            raise NotImplementedError("unexpected input.")
+
         return ln_prob
 
-    def random(self, size: int, shuffle=True):
+    def random(self, size: int):
         """
         generate random samples from the distribution.
 
         :param size: number of samples
-        :param shuffle: randomly permute generated samples(DEFAULT:True)
         :return: generated samples
         """
-        # fix: normalize again to deal with numerical error
-        vec_alpha = self._alpha / np.sum(self._alpha)
-        vec_r_k = np.random.multinomial(n=size, pvals=vec_alpha)
-        mat_r_x = np.vstack([np.random.multivariate_normal(mean=self._mu[k], cov=self._cov[k], size=size_k, check_valid="ignore") for k, size_k in enumerate(vec_r_k)])
-        if shuffle:
-            np.random.shuffle(mat_r_x)
+        mat_r_x = np.random.multivariate_normal(mean=self._mu, cov=self._cov, size=size, check_valid="ignore")
         return mat_r_x
 
     def radon_transform(self, vec_theta: vector):
         mu_t = self._mu.dot(vec_theta) # mu[k]^T.theta
         std_t = np.sqrt(vec_theta.dot(self._cov).dot(vec_theta)) # theta^T.cov[k].theta
-        return sp.stats.norm(self._alpha, mu_t, std_t)
+        return sp.stats.norm(mu_t, std_t)
 
-    def inter_distance(self, p_y: "MultiVariateGaussian", metric: str) -> np.ndarray:
+    def inter_distance(self, p_y: "MultiVariateNormal", metric: str) -> np.ndarray:
         """
-        returns distance matrix between the components of two gaussian mixtures measured by specified metric.
-        it supports gaussian mixture with diagonal covariance matrix only.
-        supported metrics are: squared 2-wasserstein(wd_sq), kullback-leibler(kl), jensen-shannon(js)
+        returns distance between two normal distributions.
+        it supports normal distribution with diagonal covariance matrix only.
+        supported metrics are: squared 2-wasserstein(wd_sq), kullback-leibler(kl), jensen-shannon(js), expected likelihood kernel(elk)
 
         :param metric:
         """
@@ -313,31 +297,31 @@ class MultiVariateNormal(object):
             assert mat_w_h.shape[1] == n_dim, "specified factor loading matrix is inconsistent with `n_dim` argument."
         else:
             mat_w_h = self._calc_principal_component_vectors(n_dim)
-        # transform mean matrix; (n_component, n_dim_r)
-        mat_mu_h = self._mu.dot(mat_w_h)
-        # transform covariance tensor; (n_component, n_dim_r, n_dim_r)
-        t_cov_h = np.transpose(mat_w_h.T.dot(self._cov).dot(mat_w_h), (1,0,2))
+        # transform mean vector; (n_dim_r,)
+        vec_mu_h = self._mu.dot(mat_w_h)
+        # transform covariance matrix; (n_component, n_dim_r, n_dim_r)
+        mat_cov_h = mat_w_h.T.dot(self._cov).dot(mat_w_h)
         # create new instance
-        ret = MultiVariateNormal(vec_alpha=self._alpha, mat_mu=mat_mu_h, tensor_cov=t_cov_h)
+        ret = MultiVariateNormal(vec_mu=vec_mu_h, mat_cov=mat_cov_h)
 
         return ret
 
     def normalize(self, inplace=False):
 
-        vec_scale = np.linalg.norm(self._mu, axis=-1)
-        mu_norm = self._mu / vec_scale.reshape(-1,1)
-        cov_norm = self._cov / (vec_scale.reshape(-1,1,1)**2)
+        scalar_scale = np.linalg.norm(self._mu)
+        mu_norm = self._mu / scalar_scale
+        cov_norm = self._cov / scalar_scale**2
 
         if inplace:
             self._mu = mu_norm
             self._cov = cov_norm
         else:
             if self.is_cov_iso:
-                vec_std = np.sqrt(np.array([cov[0,0] for cov in cov_norm]))
-                return MultiVariateNormal(vec_alpha=self._alpha, mat_mu=mu_norm, vec_std=vec_std)
+                scalar_cov = cov_norm[0,0]
+                return MultiVariateNormal(vec_mu=mu_norm, scalar_cov=scalar_cov)
             elif self.is_cov_diag:
-                mat_cov = np.stack([np.diag(cov) for cov in cov_norm])
-                return MultiVariateNormal(vec_alpha=self._alpha, mat_mu=mu_norm, mat_cov=mat_cov)
+                vec_cov = np.diag(cov_norm)
+                return MultiVariateNormal(vec_mu=mu_norm, vec_cov=vec_cov)
             else:
-                return MultiVariateNormal(vec_alpha=self._alpha, mat_mu=mu_norm, tensor_cov=cov_norm)
+                return MultiVariateNormal(vec_mu=mu_norm, vec_cov=cov_norm)
 

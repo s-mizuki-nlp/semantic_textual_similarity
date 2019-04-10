@@ -233,7 +233,7 @@ def distance_between_diag_gmm(p_x: "MultiVariateGaussianMixture", p_y: "MultiVar
     return dist
 
 
-def _expected_likelihood_kernel_multivariate_normal_diag_parallel(mat_mu_x: np.array, mat_cov_x: np.array, mat_mu_y: np.array, mat_cov_y: np.array) -> np.ndarray:
+def _expected_likelihood_kernel_multivariate_normal_diag_parallel(mat_mu_x: np.ndarray, mat_cov_x: np.ndarray, mat_mu_y: np.ndarray, mat_cov_y: np.ndarray) -> np.ndarray:
     """
     calculate expected likelihood kernel between multivariate normal distributions with diagonal covariance matrix
     """

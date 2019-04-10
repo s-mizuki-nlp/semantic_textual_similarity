@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
-from typing import List, Optional, Tuple, Iterable
+from typing import List, Optional, Tuple, Iterable, Callable, Any, Union
 
 import os, sys, io
 import pickle
@@ -13,6 +13,14 @@ from preprocess.corpora import Dictionary
 from preprocess.dataset_feeder import GeneralSentenceFeeder
 import numpy as np
 from distribution.continuous import MultiVariateNormal
+from distribution import distance
+
+
+def _ignore_error(func: Callable[[Any], Any], *args, **kwargs):
+    try:
+        return func.__call__(*args, **kwargs)
+    except:
+        return None
 
 
 class ELMo2Gauss(object):
@@ -100,6 +108,68 @@ class ELMo2Gauss(object):
         obj.__class__ = cls
         return obj
 
+    def _mask_oov_word(self, sentence: List[str], oov_symbol: Union[str,None] = "<oov>"):
+
+        def _mask(s: str):
+            try:
+                _ = self.__getitem__(s)
+                return s
+            except:
+                return oov_symbol
+
+        return list(map(_mask, sentence))
+
+    def _remove_oov_word(self, sentence: List[str]) -> List[str]:
+        sentence = self._mask_oov_word(sentence, oov_symbol=None)
+        return list(filter(bool, sentence))
+
+    def _calc_total_freq(self):
+        if self._total_freq is not None:
+            return self._total_freq
+        ret = sum(self._w2g["count"])
+        self._total_freq = ret
+        return ret
+
+    def _calc_min_freq(self):
+        if self._min_freq is not None:
+            return self._min_freq
+        ret = min(self._w2g["count"])
+        self._min_freq = ret
+        return ret
+
+    def _word_to_freq(self, word):
+        """
+        if oov, it returns None. else it returns word frequency within the corpus which is used to estimate gaussian embeddings.
+        """
+        try:
+            _, _, _, freq = self.__getitem__(word)
+            return freq
+        except:
+            return None
+
+    def weighting_unif(self, sentence: List[str]):
+        n_word = len(sentence)
+        return np.full(shape=n_word, fill_value=1./n_word, dtype=np.float64)
+
+    def weighting_sif(self, sentence: List[str], alpha: float = 1E-4, scale: bool = False, ignore_oov: bool = False):
+        n_count = self._calc_total_freq()
+        def word_to_weight(word):
+            freq = self._word_to_freq(word)
+            if freq is None:
+                w = None
+            else:
+                w = alpha / (alpha + freq/n_count)
+            return w
+
+        if ignore_oov:
+            vec_weight = np.array(list(filter(bool, map(word_to_weight, sentence))))
+        else:
+            vec_weight = np.array(list(map(word_to_weight, sentence)))
+        if scale:
+            vec_weight = vec_weight / np.nansum(vec_weight)
+
+        return vec_weight
+
     def init_params(self):
         assert len(self._w2g["count"]) == 0, "model parameters are already trained. abort."
 
@@ -107,6 +177,9 @@ class ELMo2Gauss(object):
         self._w2g["mu"] = np.zeros(shape=shp, dtype=self.__w2g_dtype)
         self._w2g["sigma"] = np.zeros(shape=shp, dtype=self.__w2g_dtype)
         self._w2g["count"] = np.zeros(shape=(self.n_vocab,), dtype=np.int64)
+        self._total_freq = None
+        self._min_freq = None
+
 
     def init_sims(self, inplace: bool = True):
         """
@@ -144,6 +217,43 @@ class ELMo2Gauss(object):
     def _subtract_mean(self, mat_w2v):
         return mat_w2v - np.mean(mat_w2v, axis=0, keepdims=True)
 
+    def word_to_gaussian(self, word: str):
+        mu, cov, _, _ = self.__getitem__(word)
+        p_x = MultiVariateNormal(vec_mu=mu, vec_cov=cov)
+        return p_x
+
+    def sentence_to_gaussians(self, sentence: List[str], ignore_error: bool = True) -> List["MultiVariateNormal"]:
+        """
+        encode sentence into list of gaussian distributions.
+        WARNING: mean and covariance is context-independent.
+
+        :param sentence: list of tokens.
+        :param ignore_error: ignore out-of-vocabulary token(=True) or replace with None(=False)
+        :return: list of MultiVariateNormal class instances.
+        """
+        if ignore_error:
+            lst_ret = [_ignore_error(self.word_to_gaussian, word) for word in sentence]
+        else:
+            lst_ret = [self.word_to_gaussian(word) for word in sentence]
+
+        return lst_ret
+
+    def sentence_to_gaussian_mixture(self, sentence: List[str], weighting_method: str = "unif"):
+
+        # remove oov tokens
+        sentence = self._remove_oov_word(sentence)
+        lst_mvn = self.sentence_to_gaussians(sentence, ignore_error=True)
+
+        if weighting_method == "unif":
+            vec_weight = self.weighting_unif(sentence)
+        elif weighting_method == "sif":
+            vec_weight = self.weighting_sif(sentence, scale=True)
+        else:
+            raise NotImplementedError(f"unknown weighting method was specified: {weighting_method}")
+
+        gmm = MultiVariateNormal.mvn_to_gmm(lst_mvn, vec_weight)
+        return gmm
+
     def sentence_to_word_vectors(self, sentence: List[str], normalize: bool = False, subtract_sentence_mean: bool = False):
         """
         encode sentence into word vectors.
@@ -163,21 +273,6 @@ class ELMo2Gauss(object):
             mat_w2v = self._subtract_mean(mat_w2v)
 
         return mat_w2v
-
-    def sentence_to_gaussians(self, sentence: List[str]):
-        """
-        encode sentence into list of gaussian distributions.
-        WARNING: mean and covariance is context-independent.
-
-        :param sentence: list of tokens.
-        :return: list of MultiVariateNormal class instances.
-        """
-        # p_x = MultiVariateNormal()
-
-        pass
-
-    def sentence_to_gaussian_mixture(self, sentence: List[str]):
-        pass
 
     def sentence_to_word_vectors_batch(self, sentences: List[List[str]], normalize: bool = False, subtract_sentence_mean: bool = False):
         """
@@ -246,3 +341,45 @@ class ELMo2Gauss(object):
             print("finished training.")
 
         return True
+
+    def _cosine_similarity(self, vec_mean_w: np.ndarray):
+        assert self._init_sims, "please call `init_sims(inplace=True)` beforehand."
+        vec_sim = self._w2g["mu"].dot(vec_mean_w)
+        return vec_sim
+
+    def _expected_likelihood_kernel(self, vec_mean_w: np.ndarray, vec_cov_w: np.ndarray):
+
+        mat_mu_x = vec_mean_w.reshape(1, -1)
+        mat_cov_x = vec_cov_w.reshape(1, -1)
+        mat_mu_y = self._w2g["mu"]
+        mat_cov_y = self._w2g["sigma"]
+        vec_sim = distance._expected_likelihood_kernel_multivariate_normal_diag_parallel(mat_mu_x, mat_cov_x, mat_mu_y, mat_cov_y)
+        return vec_sim
+
+    def _wasserstein_distance_similarity(self, vec_mean_w: np.ndarray, vec_cov_w: np.ndarray):
+        # the larger, the more similar
+        mat_mu_x = vec_mean_w.reshape(1, -1)
+        mat_std_x = np.sqrt(vec_cov_w).reshape(1, -1)
+        mat_mu_y = self._w2g["mu"]
+        mat_std_y = np.sqrt(self._w2g["sigma"])
+        vec_dist = distance._wasserstein_distance_sq_between_multivariate_normal_diag_parallel(mat_mu_x, mat_std_x, mat_mu_y, mat_std_y)
+        return -vec_dist
+
+    def most_similar(self, word: str, topn: int = 10, similarity: str = "cosine"):
+
+        vec_mean_w, vec_cov_w, _, _ = self.__getitem__(word)
+        if similarity == "cosine":
+            vec_sim = self._cosine_similarity(vec_mean_w)
+        elif similarity == "elk":
+            vec_sim = self._expected_likelihood_kernel(vec_mean_w, vec_cov_w)
+        elif similarity == "wd_sq":
+            vec_sim = self._wasserstein_distance_similarity(vec_mean_w, vec_cov_w)
+        else:
+            raise NotImplementedError(f"unknown similarity measure was specified: {similarity}")
+
+        vec_idx = np.argsort(vec_sim)[::-1][:topn]
+        vec_result_sim = vec_sim[vec_idx]
+        lst_result_words = self._dictionary.inverse_transform(vec_idx)
+        ret = list(zip(lst_result_words, vec_result_sim))
+
+        return ret
