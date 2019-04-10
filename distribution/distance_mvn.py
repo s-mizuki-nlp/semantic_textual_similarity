@@ -1,27 +1,29 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 import numpy as np
+from scipy.stats import multivariate_normal
 from distribution.continuous import MultiVariateNormal
 
+
+def _extract_params(p: "MultiVariateNormal"):
+    vec_mu = p.mean
+    if p.is_cov_diag:
+        cov = np.diag(p.covariance)
+    else:
+        cov = p.covariance
+    return vec_mu, cov
 
 # kullback-leibler divergence
 def kldiv_between_mvn(p_x: "MultiVariateNormal", p_y: "MultiVariateNormal"):
 
+    vec_mu_x, vm_cov_x = _extract_params(p_x)
+    vec_mu_y, vm_cov_y = _extract_params(p_y)
     if p_x.is_cov_diag and p_y.is_cov_diag:
-        vec_mu_x = p_x.mean
-        vec_cov_x = np.diag(p_x.covariance)
-        vec_mu_y = p_y.mean
-        vec_cov_y = np.diag(p_y.covariance)
-        kldiv = _kldiv_mvn_diag(vec_mu_x, vec_cov_x, vec_mu_y, vec_cov_y)
+        kldiv = _kldiv_mvn_diag(vec_mu_x, vm_cov_x, vec_mu_y, vm_cov_y)
     else:
-        vec_mu_x = p_x.mean
-        mat_cov_x = p_x.covariance
-        vec_mu_y = p_y.mean
-        mat_cov_y = p_y.covariance
-        kldiv = _kldiv_mvn_full(vec_mu_x, mat_cov_x, vec_mu_y, mat_cov_y)
+        kldiv = _kldiv_mvn_full(vec_mu_x, vm_cov_x, vec_mu_y, vm_cov_y)
 
     return kldiv
-
 
 def _kldiv_mvn_diag(vec_mu_x: np.ndarray, vec_cov_x: np.ndarray, vec_mu_y: np.ndarray, vec_cov_y: np.ndarray):
 
@@ -33,7 +35,6 @@ def _kldiv_mvn_diag(vec_mu_x: np.ndarray, vec_cov_x: np.ndarray, vec_mu_y: np.nd
 
     kldiv = 0.5*(tr_cov12 + quad_12 - d - ln_det_cov2 + ln_det_cov1)
     return kldiv
-
 
 def _kldiv_mvn_full(vec_mu_x: np.ndarray, mat_cov_x: np.ndarray, vec_mu_y: np.ndarray, mat_cov_y: np.ndarray):
 
@@ -50,3 +51,21 @@ def _kldiv_mvn_full(vec_mu_x: np.ndarray, mat_cov_x: np.ndarray, vec_mu_y: np.nd
 
     kldiv = 0.5*(tr_cov12 + quad_12 - d - ln_det_cov2 + ln_det_cov1)
     return kldiv
+
+
+def expected_likelihood_mvn(p_x: "MultiVariateNormal", p_y: "MultiVariateNormal", log: bool = False):
+
+    vec_mu_x, vm_cov_x = _extract_params(p_x)
+    vec_mu_y, vm_cov_y = _extract_params(p_y)
+
+    n_dim = len(vec_mu_x)
+    vec_mu_xy = vec_mu_x - vec_mu_y
+    vm_cov_xy = vm_cov_x + vm_cov_y
+    vec_x = np.zeros(n_dim, dtype=vec_mu_x.dtype)
+
+    if log:
+        elk = multivariate_normal.logpdf(vec_x, vec_mu_xy, vm_cov_xy)
+    else:
+        elk = multivariate_normal.pdf(vec_x, vec_mu_xy, vm_cov_xy)
+
+    return elk
