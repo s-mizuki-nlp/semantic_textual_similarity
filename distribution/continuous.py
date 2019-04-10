@@ -83,7 +83,7 @@ class MultiVariateNormal(object):
 
     @classmethod
     def random_generation(cls, n_dim: int, covariance_type="diagonal", mu_range=None, cov_range=None):
-        lst_available_covariance_type = "identity,isotropic,diagonal".split(",")
+        lst_available_covariance_type = "identity,isotropic,diagonal,full".split(",")
         msg = "argument `covariance_type must be one of those: %s" % "/".join(lst_available_covariance_type)
         assert covariance_type in lst_available_covariance_type, msg
 
@@ -100,6 +100,12 @@ class MultiVariateNormal(object):
         elif covariance_type == "identity":
             scalar_cov = 1.
             ret = cls(vec_mu, scalar_cov=scalar_cov)
+        elif covariance_type == "full":
+            # sample from inverse-wishart distribution.
+            scale_param = np.diag(np.random.uniform(low=rng_cov[0], high=rng_cov[1], size=n_dim))
+            dof = n_dim + 2
+            mat_cov = sp.stats.invwishart.rvs(df=dof, scale=scale_param)
+            ret = cls(vec_mu, mat_cov=mat_cov)
         else:
             raise NotImplementedError("unexpected input.")
 
