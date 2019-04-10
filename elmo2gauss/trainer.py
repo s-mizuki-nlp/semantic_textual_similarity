@@ -173,10 +173,10 @@ class ELMo2Gauss(object):
     def init_params(self):
         assert len(self._w2g["count"]) == 0, "model parameters are already trained. abort."
 
-        shp = (self.n_vocab, self.vector_size)
+        shp = (self._dictionary.max_id+1, self.vector_size)
         self._w2g["mu"] = np.zeros(shape=shp, dtype=self.__w2g_dtype)
         self._w2g["sigma"] = np.zeros(shape=shp, dtype=self.__w2g_dtype)
-        self._w2g["count"] = np.zeros(shape=(self.n_vocab,), dtype=np.int64)
+        self._w2g["count"] = np.zeros(shape=shp[0], dtype=np.int64)
         self._total_freq = None
         self._min_freq = None
 
