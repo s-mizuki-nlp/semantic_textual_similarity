@@ -8,6 +8,7 @@ import pickle
 import numpy as np
 import scipy as sp
 from scipy.stats import multivariate_normal, norm
+from scipy.special import iv
 from scipy.misc import logsumexp
 from scipy import optimize
 from matplotlib import pyplot as plt
@@ -77,7 +78,7 @@ class MultiVariateNormal(object):
         return e
 
     @property
-    def normalization_term(self) -> float:
+    def log_normalization_term(self) -> float:
         z = - (self.entropy - 0.5 * self._n_dim)
         return z
 
@@ -325,3 +326,240 @@ class MultiVariateNormal(object):
             else:
                 return MultiVariateNormal(vec_mu=mu_norm, vec_cov=cov_norm)
 
+
+# utility functions
+def _hiv(alpha, x):
+    if x == 0.:
+        return 0.
+    return iv(alpha, x) / iv(alpha-1, x)
+
+class vonMisesFisher(object):
+
+    __EPS = 1E-5
+
+    def __init__(self, vec_mu: vector, scalar_kappa: float):
+        self._n_dim = len(vec_mu)
+        self._mu = vec_mu
+        self._kappa = scalar_kappa
+        self._validate()
+        self._normalization_term = self._calc_normalization_term()
+
+    def _validate(self):
+        assert np.abs(1. - np.linalg.norm(self._mu)) < self.__EPS, "`vec_mu` must be unit vector."
+        assert self._kappa >= 0, "`scalar_kappa` must be positive."
+        return True
+
+    @property
+    def n_dim(self):
+        return self._n_dim
+
+    @property
+    def mu(self) -> np.ndarray:
+        return self._mu
+
+    @property
+    def kappa(self) -> float:
+        return self._kappa
+
+    @property
+    def mean(self) -> np.ndarray:
+        coef = _hiv(0.5*self._n_dim, self._kappa)
+        return self._mu * coef
+
+    @property
+    def covariance(self) -> np.ndarray:
+        cov_mu = np.outer(self._mu, self._mu)
+        cov_eye = np.eye(self._n_dim, dtype=np.float)
+        h = _hiv(0.5*self._n_dim, self._kappa)
+        cov = (h/self._kappa)*cov_eye + (1 - self._n_dim*h/self._kappa - h**2)*cov_mu
+        return cov
+
+    @property
+    def entropy(self) -> float:
+        # H[p] = c_p(\kappa) - \kappa<\mu, E[x]> = c_p(\kappa) - \kappa * hiv(n_dim/2,\kappa)
+        e = self.log_normalization_term - self._kappa * _hiv(alpha=self._n_dim*0.5, x=self._kappa)
+        return e
+
+    @property
+    def normalization_term(self) -> float:
+        return self._normalization_term
+
+    @property
+    def log_normalization_term(self) -> float:
+        return np.log(self._normalization_term)
+
+    def _calc_normalization_term(self) -> float:
+        n_dim = self._n_dim
+        kappa = self._kappa
+
+        d_dash = 0.5*n_dim - 1
+        norm = kappa**d_dash
+        denom = np.power(2*np.pi, 0.5*n_dim) * iv(d_dash, kappa)
+
+        return 1./ (norm / denom) # 1 / C_p(\kappa)
+
+    @classmethod
+    def random_generation(cls, n_dim: int, mu_range=None, kappa_range=None):
+        rng_mu = [-2, 2] if mu_range is None else mu_range
+        rng_kappa = [0.1, 3.0] if kappa_range is None else kappa_range
+
+        vec_mu = np.random.uniform(low=rng_mu[0], high=rng_mu[1], size=n_dim)
+        vec_mu /= np.linalg.norm(vec_mu)
+        scalar_kappa = np.random.uniform(low=rng_kappa[0], high=rng_kappa[1], size=1)
+        ret = cls(vec_mu, scalar_kappa)
+
+        return ret
+
+    def save(self, file_path: str):
+        assert self._validate(), "corrupted inner structure detected."
+        with io.open(file_path, mode="wb") as ofs:
+            pickle.dump(self, ofs)
+
+    @classmethod
+    def load(cls, file_path: str) -> "vonMisesFisher":
+        with io.open(file_path, mode="rb") as ifs:
+            obj = pickle.load(ifs)
+        obj.__class__ = cls
+        return obj
+
+    def density_plot(self, fig_and_ax=None, vis_range: Optional[Tuple[float]] = None,
+                     figsize: Optional[Tuple[float]] = None,
+                     annotation: Optional[str] = None, n_mesh_bin: int = 100, cmap: str = "Reds", **kwargs):
+        assert self._n_dim == 2, "visualization isn't available except 2-dimensional distribution."
+
+        """
+        Ideally I want to visualize it on the surface of the sphere (3D) or on the edge of the circle (2D),
+        but it exceeds my knowledge.
+        Instead, I regard this as the 2-dimensional multivariate normal distribution for the time being.
+        """
+        p_mvn = MultiVariateNormal(vec_mu=self._mu, mat_cov=self.covariance)
+        fig, ax = p_mvn.density_plot(fig_and_ax, vis_range, figsize, annotation, n_mesh_bin, cmap, **kwargs)
+        return fig, ax
+
+    def _likelihood(self, x: np.ndarray):
+        return np.exp(self._kappa*np.dot(x, self._mu))
+
+    def _log_likelihood(self, x):
+        return self._kappa*np.dot(x, self._mu)
+
+    def _sample_ortho_norm_vector(self, theta: np.ndarray, size: int):
+        n_dim = len(theta)
+        x = np.random.rand(n_dim*size).reshape(size,n_dim) - 0.5
+        # orthogonal to theta
+        # x = x - <x,\theta> / \theta / n_dim
+        x = x - np.dot(x, theta).reshape(size,1) * (1./(n_dim*theta)).reshape(1,n_dim)
+        # normalize
+        x /= np.linalg.norm(x, axis=1, keepdims=True)
+        return x
+
+    def _sample_weight_batch(self, vec_kappa: np.ndarray, n_dim: int, size: int):
+        result = np.stack([self._sample_weight(kappa, n_dim, size) for kappa in vec_kappa])
+        return result
+
+    def _sample_weight(self, kappa, n_dim: int, size: int):
+        """
+        Rejection sampling scheme for sampling distance from center on surface of the sphere.
+        borrowed from: https://github.com/jiacheng-xu/vmf_vae_nlp
+        """
+        dim = n_dim - 1  # since S^{n-1}
+        b = dim / (np.sqrt(4. * kappa ** 2 + dim ** 2) + 2 * kappa)
+        x = (1. - b) / (1. + b)
+        c = kappa * x + dim * np.log(1 - x ** 2)
+
+        sampled = 0
+        vec_result = np.zeros(shape=(size,), dtype=np.float)
+        while True:
+            z = np.random.beta(dim / 2., dim / 2.)  # concentrates towards 0.5 as d-> inf
+            w = (1. - (1. + b) * z) / (1. - (1. - b) * z)
+            u = np.random.uniform(low=0, high=1)
+            if kappa * w + dim * np.log(1. - x * w) - c >= np.log(u):
+                vec_result[sampled] = w
+                sampled += 1
+                if sampled == size:
+                    return vec_result
+
+    def pdf(self, vec_x: Union[vector, matrix]) -> np.ndarray:
+        l = self._likelihood(vec_x)
+        norm = self.normalization_term
+        return l / norm
+
+    def logpdf(self, vec_x: Union[vector, matrix]) -> np.ndarray:
+        ln_l = self._log_likelihood(vec_x)
+        ln_norm = self.log_normalization_term
+        return ln_l - ln_norm
+
+    def random(self, size: int):
+        """
+        generate random samples from the distribution.
+
+        :param size: number of samples
+        :return: generated samples
+        """
+        n_dim = self._n_dim
+        vec_w = self._sample_weight(self._kappa, n_dim, size).reshape(size, 1)
+        mat_v = self._sample_ortho_norm_vector(self._mu, size)
+        # x = sqrt(1-w**2)*v+w*mu
+        mat_result = mat_v * np.sqrt(1.-vec_w**2) + vec_w*self._mu.reshape(1,n_dim)
+
+        if size == 1:
+            mat_result = mat_result.flatten()
+
+        return mat_result
+
+    def inter_distance(self, p_y: "MultiVariateNormal", metric: str) -> float:
+        """
+        returns distance between two normal distributions.
+        it supports normal distribution with diagonal covariance matrix only.
+        supported metrics are: squared 2-wasserstein(wd_sq), kullback-leibler(kl), jensen-shannon(js), expected likelihood kernel(elk)
+
+        :param metric:
+        """
+        raise NotImplementedError("not implemented yet.")
+
+    def _calc_principal_component_vectors(self, n_dim: int):
+        assert n_dim < self.n_dim, "reduced dimension size `n_dim` must be smaller than original dimension size."
+
+        # covariance matrix
+        mat_cov = self.covariance
+        # eigen decomposition
+        vec_l, mat_w = np.linalg.eig(mat_cov)
+        # take largest top-k eigenvectors
+        idx_rank = vec_l.argsort()[::-1]
+        mat_w_h = mat_w[:, idx_rank[:n_dim]]
+        # returned matrix shape will be (self.n_dim, n_dim). each column is a i-th eigenvector
+        return mat_w_h
+
+    def _find_root_kappa_for_dimensionality_reduction(self, n_dim_target) -> float:
+        objective_value = _hiv(alpha=self._n_dim*0.5, x=self._kappa)
+        alpha = n_dim_target*0.5
+        def objective_function(kappa):
+            return _hiv(alpha=alpha, x=kappa) - objective_value
+
+        rng_kappa = (0., self._kappa)
+        kappa_new = sp.optimize.bisect(objective_function, *rng_kappa)
+
+        return kappa_new
+
+    def dimensionality_reduction_by_pca(self, n_dim: int, factor_loading_matrix: Optional[np.ndarray] = None):
+
+        # it seems that naive linear transformation doesn't work as expected.
+        # I have to nothing but disable this method until I come up with a good solution.
+        raise NotImplementedError("you can't use this method for the time being.")
+
+        assert 1 < n_dim < self._n_dim, f"`n_dim` must be smaller than original dimension size: {self._n_dim}"
+
+        # calculate factor loading matrix; (n_dim, n_dim_r)
+        if factor_loading_matrix is not None:
+            mat_w_h = factor_loading_matrix
+            assert mat_w_h.shape[1] == n_dim, "specified factor loading matrix is inconsistent with `n_dim` argument."
+        else:
+            mat_w_h = self._calc_principal_component_vectors(n_dim)
+        # transform direction vector; (n_dim_r,)
+        vec_mu_h = self._mu.dot(mat_w_h)
+        vec_mu_h /= np.linalg.norm(vec_mu_h)
+        # calculate best scale parameter that preserves
+        kappa_h = self._find_root_kappa_for_dimensionality_reduction(n_dim_target=n_dim)
+        # create new instance
+        ret = vonMisesFisher(vec_mu_h, kappa_h)
+
+        return ret
