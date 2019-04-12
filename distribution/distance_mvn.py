@@ -14,7 +14,7 @@ def _extract_params(p: "MultiVariateNormal"):
     return vec_mu, cov
 
 # kullback-leibler divergence
-def kldiv_between_mvn(p_x: "MultiVariateNormal", p_y: "MultiVariateNormal"):
+def kullback_leibler_mvn(p_x: "MultiVariateNormal", p_y: "MultiVariateNormal"):
 
     vec_mu_x, vm_cov_x = _extract_params(p_x)
     vec_mu_y, vm_cov_y = _extract_params(p_y)
@@ -53,7 +53,7 @@ def _kldiv_mvn_full(vec_mu_x: np.ndarray, mat_cov_x: np.ndarray, vec_mu_y: np.nd
     return kldiv
 
 
-def expected_likelihood_mvn(p_x: "MultiVariateNormal", p_y: "MultiVariateNormal", log: bool = False):
+def expected_likelihood_mvn(p_x: "MultiVariateNormal", p_y: "MultiVariateNormal", log: bool = True):
 
     vec_mu_x, vm_cov_x = _extract_params(p_x)
     vec_mu_y, vm_cov_y = _extract_params(p_y)
