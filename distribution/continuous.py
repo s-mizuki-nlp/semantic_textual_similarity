@@ -342,7 +342,7 @@ class vonMisesFisher(object):
         self._mu = vec_mu
         self._kappa = scalar_kappa
         self._validate()
-        self._normalization_term = self._calc_normalization_term()
+        self._normalization_term = self.calc_normalization_term(self._n_dim, self._kappa)
 
     def _validate(self):
         assert np.abs(1. - np.linalg.norm(self._mu)) < self.__EPS, "`vec_mu` must be unit vector."
@@ -388,10 +388,8 @@ class vonMisesFisher(object):
     def log_normalization_term(self) -> float:
         return np.log(self._normalization_term)
 
-    def _calc_normalization_term(self) -> float:
-        n_dim = self._n_dim
-        kappa = self._kappa
-
+    @classmethod
+    def calc_normalization_term(cls, n_dim, kappa) -> float:
         d_dash = 0.5*n_dim - 1
         norm = kappa**d_dash
         denom = np.power(2*np.pi, 0.5*n_dim) * iv(d_dash, kappa)
@@ -405,7 +403,7 @@ class vonMisesFisher(object):
 
         vec_mu = np.random.uniform(low=rng_mu[0], high=rng_mu[1], size=n_dim)
         vec_mu /= np.linalg.norm(vec_mu)
-        scalar_kappa = np.random.uniform(low=rng_kappa[0], high=rng_kappa[1], size=1)
+        scalar_kappa = np.random.uniform(low=rng_kappa[0], high=rng_kappa[1], size=1)[0]
         ret = cls(vec_mu, scalar_kappa)
 
         return ret
