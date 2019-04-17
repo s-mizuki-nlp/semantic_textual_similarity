@@ -28,7 +28,7 @@ def _parse_args():
                         help="pooling method applied to extracted embeddings. DEFAULT: `mean`")
     parser.add_argument("--corpus", "-c", required=True, type=str, help="path to the pre-tokenized corpus.")
     parser.add_argument("--dictionary", "-d", required=True, type=str, help="path to the pre-defined dictionary.")
-    parser.add_argument("--do_lower_case", required=False, type=bool, default=False, help="lowercase or not. default: False")
+    parser.add_argument("--do_lower_case", action="store_true", help="lowercase or not. default: disabled")
     parser.add_argument("--n_minibatch", required=False, type=int, default=128, help="minibatch size when encoding sentences.")
     parser.add_argument("--max_seq_len", required=False, type=int, default=96, help="maximum sequence length.")
     parser.add_argument("--cuda_device", required=False, type=int, default=-1, help="cuda device ID. default: -1 (=disabled)")
