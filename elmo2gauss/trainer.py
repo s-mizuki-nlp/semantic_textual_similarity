@@ -108,6 +108,23 @@ class ELMo2Gauss(object):
         obj.__class__ = cls
         return obj
 
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        del state["_elmo"]
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        self._elmo = None
+
+    @property
+    def elmo_embedder(self):
+        return self._elmo
+
+    @elmo_embedder.setter
+    def elmo_embedder(self, model_elmo):
+        self._elmo = model_elmo
+
     def _mask_oov_word(self, sentence: List[str], oov_symbol: Union[str,None] = "<oov>"):
 
         def _mask(s: str):
@@ -295,6 +312,7 @@ class ELMo2Gauss(object):
     def train(self, dataset_feeder: GeneralSentenceFeeder,
               normalize: bool = False, subtract_sentence_mean: bool = False, ddof: int = 0):
 
+        assert self._elmo is not None, "you have to assign ElmoEmbedder class instance."
         assert normalize == False, "experimental: do not enable word-level normalization."
         assert ddof >= 0, "degree of freedom must be positive integer."
         assert dataset_feeder._dictionary is None, "dataset feeder mustn't have dictionary instance."
