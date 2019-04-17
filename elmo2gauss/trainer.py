@@ -395,7 +395,7 @@ class ELMo2Gauss(object):
         else:
             raise NotImplementedError(f"unknown similarity measure was specified: {similarity}")
 
-        vec_idx = np.argsort(vec_sim)[::-1][:topn]
+        vec_idx = np.argsort(-vec_sim)[:topn]
         vec_result_sim = vec_sim[vec_idx]
         lst_result_words = self._dictionary.inverse_transform(vec_idx)
         ret = list(zip(lst_result_words, vec_result_sim))
