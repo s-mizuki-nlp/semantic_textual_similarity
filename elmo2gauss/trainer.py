@@ -25,6 +25,7 @@ def _ignore_error(func: Callable[[Any], Any], *args, **kwargs):
 
 class ELMo2Gauss(object):
 
+    __min_cov_value = 1E-10
     __w2g_dtype = np.float32
     __available_pooling_methods = tuple("mean,max,concat".split(","))
 
@@ -80,6 +81,7 @@ class ELMo2Gauss(object):
 
         mean = self._w2g["mu"][idx]
         cov = self._w2g["sigma"][idx]
+        cov = np.maximum(cov, self.__min_cov_value)
         logdet = np.sum(np.log(cov))
         return (mean, cov, logdet, count)
 
