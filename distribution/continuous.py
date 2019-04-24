@@ -8,7 +8,7 @@ import pickle
 import numpy as np
 import scipy as sp
 from scipy.stats import multivariate_normal, norm
-from scipy.special import iv
+from scipy.special import iv, eval_genlaguerre
 from scipy.misc import logsumexp
 from scipy import optimize
 from matplotlib import pyplot as plt
@@ -81,6 +81,51 @@ class MultiVariateNormal(object):
     def log_normalization_term(self) -> float:
         z = - (self.entropy - 0.5 * self._n_dim)
         return z
+
+    @property
+    def l2_norm_mean(self) -> float:
+        """
+        expected value of the L2 norm of the vector that follows multivariate normal distribution.
+        analytical solution utilizes the expected value of the non-central chi distribution.
+        https://en.wikipedia.org/wiki/Noncentral_chi_distribution
+        this method supports either isotropic or diagonal covariance matrix.
+        for diagonal covariance, currently it applies equal variance approximation.
+
+        * $E[||X||] = \sigma \sqrt{\pi/2} L^{d/2-1}_{1/2}(\lambda)$
+            * $\lambda = \sqrt{(\sum_i{(\mu_i/\sigma)^2}}$
+            * $L$: generalized laguerre polynomial
+        :return: expected value of the L2-norm
+        """
+
+        if self.is_cov_iso:
+            std = np.sqrt(self._cov[0][0])
+        elif self.is_cov_diag:
+            warnings.warn("approximates diagonal covariance with geometric mean.")
+            std = np.exp(0.5*np.mean(np.log(self._cov.diagonal())))
+        else:
+            raise NotImplementedError("it supports diagonal covariance only.")
+
+        p_lambda = np.sqrt(np.sum((self._mu/std)**2))
+        p_k = self.n_dim
+        # generalized Laguerre polynomial; L^{(a)}_n(z)
+        p_a = 0.5*p_k - 1
+        p_n = 0.5
+        p_z = - 0.5 * p_lambda**2
+        l2_norm = std*np.sqrt(np.pi*0.5)*eval_genlaguerre(p_n, p_a, p_z)
+
+        return l2_norm
+
+    @property
+    def l2_norm_covariance(self) -> float:
+        """
+        covariance of the L2 norm of the vector that follows multivariate normal distribution.
+        analytical solution exists for either isotropic or diagonal covariance matrix.
+        """
+
+        l2_norm_mean = self.l2_norm_mean
+        vec_cov = self._cov.diagonal()
+        ret = np.sum(self._mu**2) + np.sum(vec_cov) - l2_norm_mean**2
+        return ret
 
     @classmethod
     def random_generation(cls, n_dim: int, covariance_type="diagonal", mu_range=None, cov_range=None):
