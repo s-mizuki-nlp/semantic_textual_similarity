@@ -58,7 +58,9 @@ class ELMo2Gauss(object):
         self._w2g = {
             "mu": np.zeros(shape=(0, self._vector_size), dtype=np.float32),
             "sigma": np.zeros(shape=(0, self._vector_size), dtype=np.float32),
-            "count": np.zeros(shape=(0,), dtype=np.int64)
+            "count": np.zeros(shape=(0,), dtype=np.int64),
+            "l2_norm_mean": np.zeros(shape=(0,), dtype=np.float32),
+            "l2_norm_var": np.zeros(shape=(0,), dtype=np.float32)
         }
 
     def _pool_mean(self, t_mat_w2v: np.ndarray):
@@ -83,7 +85,13 @@ class ELMo2Gauss(object):
         cov = self._w2g["sigma"][idx]
         cov = np.maximum(cov, self.__min_cov_value)
         logdet = np.sum(np.log(cov))
-        return (mean, cov, logdet, count)
+
+        if "l2_norm_mean" in self._w2g:
+            l2_mean = self._w2g["l2_norm_mean"][idx]
+            l2_var = self._w2g["l2_norm_var"][idx]
+            return (mean, cov, logdet, count, l2_mean, l2_var)
+        else:
+            return (mean, cov, logdet, count)
 
     @classmethod
     def available_pooling_methods(cls):
@@ -161,7 +169,7 @@ class ELMo2Gauss(object):
         if oov, it returns None. else it returns word frequency within the corpus which is used to estimate gaussian embeddings.
         """
         try:
-            _, _, _, freq = self.__getitem__(word)
+            freq = self.__getitem__(word)[3]
             return freq
         except:
             return None
@@ -196,6 +204,8 @@ class ELMo2Gauss(object):
         self._w2g["mu"] = np.zeros(shape=shp, dtype=self.__w2g_dtype)
         self._w2g["sigma"] = np.zeros(shape=shp, dtype=self.__w2g_dtype)
         self._w2g["count"] = np.zeros(shape=shp[0], dtype=np.int64)
+        self._w2g["l2_norm_mean"] = np.zeros(shape=shp[0], dtype=self.__w2g_dtype)
+        self._w2g["l2_norm_var"] = np.zeros(shape=shp[0], dtype=self.__w2g_dtype)
         self._total_freq = None
         self._min_freq = None
 
@@ -237,7 +247,7 @@ class ELMo2Gauss(object):
         return mat_w2v - np.mean(mat_w2v, axis=0, keepdims=True)
 
     def word_to_gaussian(self, word: str):
-        mu, cov, _, _ = self.__getitem__(word)
+        mu, cov = self.__getitem__(word)[:2]
         p_x = MultiVariateNormal(vec_mu=mu, vec_cov=cov)
         return p_x
 
@@ -328,6 +338,8 @@ class ELMo2Gauss(object):
         mat_mu = self._w2g["mu"]
         mat_sigma = self._w2g["sigma"]
         vec_count = self._w2g["count"]
+        vec_l2_norm_mean = self._w2g["l2_norm_mean"]
+        vec_l2_norm_var = self._w2g["l2_norm_var"]
 
         n_sentence = dataset_feeder.size
         n_processed = 0
@@ -336,13 +348,16 @@ class ELMo2Gauss(object):
             lst_mat_w2v = self.sentence_to_word_vectors_batch(lst_lst_tokens, normalize, subtract_sentence_mean)
             for lst_tokens, mat_w2v in zip(lst_lst_tokens, lst_mat_w2v):
                 lst_token_idx = self._dictionary.transform(lst_tokens)
-                for token_idx, vec_w in zip(lst_token_idx, mat_w2v):
+                vec_w2v_l2_norm = np.linalg.norm(mat_w2v, axis=-1)
+                for token_idx, vec_w, l2_norm in zip(lst_token_idx, mat_w2v, vec_w2v_l2_norm):
                     if token_idx == oov_id:
                         continue
 
                     vec_count[token_idx] += 1
                     mat_mu[token_idx] += vec_w # \sum{v_w}
                     mat_sigma[token_idx] += vec_w**2 # \sum{v_w^2}
+                    vec_l2_norm_mean[token_idx] += l2_norm
+                    vec_l2_norm_var[token_idx] += l2_norm**2
 
             n_processed += len(lst_lst_tokens)
             q.update(n_processed)
@@ -351,11 +366,15 @@ class ELMo2Gauss(object):
         mat_mu /= vec_count.reshape(-1,1) # mat_mu[idx(w)] = \sum{v_w} / freq[w]
         mat_sigma /= vec_count.reshape(-1,1) # mat_sigma[idx(w)] = \sum{v_w^2} / freq[w]
         mat_sigma -= mat_mu**2 # mat_sigma[idx(w)] = \sum{v_w^2} / freq[w] - mat_mu[idx(w)]^2
+        vec_l2_norm_mean /= vec_count # vec_l2_norm_mean[idx(w)] = \sum{|v_w|} / freq[w]
+        vec_l2_norm_var /= vec_count
+        vec_l2_norm_var -= vec_l2_norm_mean**2 # vec_l2_norm_var[idx(w)] = \sum{|v_w|^2} / freq[w] - vec_l2_norm_mean[idx(w)]^2
 
         # (optional) adjust degree of freedom
         if ddof > 0:
             vec_dof_adjust = vec_count / np.maximum(vec_count-1, 1)
             mat_sigma *= vec_dof_adjust.reshape(-1,1)
+            vec_l2_norm_var *= vec_dof_adjust
 
         if self._verbose:
             print("finished training.")
