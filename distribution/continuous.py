@@ -105,6 +105,9 @@ class MultiVariateNormal(object):
         else:
             raise NotImplementedError("it supports diagonal covariance only.")
 
+        if hasattr(self, "_l2_norm_mean"):
+            return self._l2_norm_mean
+
         p_lambda = np.sqrt(np.sum((self._mu/std)**2))
         p_k = self.n_dim
         # generalized Laguerre polynomial; L^{(a)}_n(z)
@@ -113,18 +116,25 @@ class MultiVariateNormal(object):
         p_z = - 0.5 * p_lambda**2
         l2_norm = std*np.sqrt(np.pi*0.5)*eval_genlaguerre(p_n, p_a, p_z)
 
+        self._l2_norm_mean = l2_norm
+
         return l2_norm
 
     @property
-    def l2_norm_covariance(self) -> float:
+    def l2_norm_variance(self) -> float:
         """
         covariance of the L2 norm of the vector that follows multivariate normal distribution.
         analytical solution exists for either isotropic or diagonal covariance matrix.
         """
+        if hasattr(self, "_l2_norm_var"):
+            return self._l2_norm_var
 
         l2_norm_mean = self.l2_norm_mean
         vec_cov = self._cov.diagonal()
         ret = np.sum(self._mu**2) + np.sum(vec_cov) - l2_norm_mean**2
+
+        self._l2_norm_var = ret
+
         return ret
 
     @classmethod
