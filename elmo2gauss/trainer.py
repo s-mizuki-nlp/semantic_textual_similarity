@@ -105,6 +105,10 @@ class ELMo2Gauss(object):
     def n_vocab(self):
         return self._n_vocab
 
+    @property
+    def n_vocab_wo_special(self):
+         return self._n_vocab - (self._dictionary.offset + 1)
+
     def save(self, file_path: str):
         if len(self._w2g["count"]) == 0:
             warnings.warn("distribution parameter is empty. did you call `train()` method?")
