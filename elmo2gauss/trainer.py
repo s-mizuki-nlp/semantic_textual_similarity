@@ -109,6 +109,15 @@ class ELMo2Gauss(object):
     def n_vocab_wo_special(self):
          return self._n_vocab - (self._dictionary.offset + 1)
 
+    @property
+    def w2g_dtype(self):
+        return self.__w2g_dtype
+
+    @w2g_dtype.setter
+    def w2g_dtype(self, value: type):
+        assert isinstance(value, type), "assigned value must be `type` type."
+        self.__w2g_dtype = value
+
     def save(self, file_path: str):
         if len(self._w2g["count"]) == 0:
             warnings.warn("distribution parameter is empty. did you call `train()` method?")

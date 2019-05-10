@@ -31,6 +31,7 @@ def _parse_args():
     parser.add_argument("--do_lower_case", action="store_true", help="lowercase or not. default: disabled")
     parser.add_argument("--n_minibatch", required=False, type=int, default=128, help="minibatch size when encoding sentences.")
     parser.add_argument("--max_seq_len", required=False, type=int, default=96, help="maximum sequence length.")
+    parser.add_argument("--dtype", required=False, type=str, default="float", choices=["float","double"], help="data type used to calculate.")
     parser.add_argument("--cuda_device", required=False, type=int, default=-1, help="cuda device ID. default: -1 (=disabled)")
     parser.add_argument("--save", "-s", required=True, type=str, help="path to the trained ELMo2Gauss encoder.")
     args = parser.parse_args()
@@ -58,6 +59,11 @@ def main():
     # instanciate ELMo2Gauss encoder
     encoder = ELMo2Gauss(model_elmo=elmo, dictionary=dictionary,
                          extract_layer_ids=args.elmo_extract_layer_ids, pooling_method=args.elmo_pooling_method, verbose=True)
+    if args.dtype == "float":
+        encoder.w2g_dtype = np.float32
+    elif args.dtype == "double":
+        encoder.w2g_dtype = np.float64
+
     print("start training...")
     encoder.train(dataset_feeder=feeder)
     encoder.save(args.save)
