@@ -245,7 +245,7 @@ class MultiVariateGaussianMixture(object):
             ln_prob = logsumexp(m_ln_prob, axis=1)
         return ln_prob
     
-    def random(self, size: int, shuffle=True):
+    def random(self, size: int, shuffle=True, return_component_index=False):
         """
         generate random samples from the distribution.
 
@@ -257,9 +257,20 @@ class MultiVariateGaussianMixture(object):
         vec_alpha = self._alpha / np.sum(self._alpha)
         vec_r_k = np.random.multinomial(n=size, pvals=vec_alpha)
         mat_r_x = np.vstack([np.random.multivariate_normal(mean=self._mu[k], cov=self._cov[k], size=size_k, check_valid="ignore") for k, size_k in enumerate(vec_r_k)])
+
+        seq_idx = [np.repeat(k, size_k) for k, size_k in enumerate(vec_r_k)]
+        vec_idx = np.concatenate(seq_idx)
+
         if shuffle:
-            np.random.shuffle(mat_r_x)
-        return mat_r_x
+            p = np.random.permutation(size)
+            vec_idx = vec_idx[p]
+            mat_r_x = mat_r_x[p,:]
+            # np.random.shuffle(mat_r_x)
+
+        if return_component_index:
+            return mat_r_x, vec_idx
+        else:
+            return mat_r_x
 
     def radon_transform(self, vec_theta: vector):
         mu_t = self._mu.dot(vec_theta) # mu[k]^T.theta
