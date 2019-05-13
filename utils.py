@@ -5,7 +5,7 @@ import warnings
 import numpy as np
 from distribution.distance import _l2_distance_sq
 
-def soft_nearest_neighbor_loss(mat_x: np.ndarray, vec_y: np.ndarray, temperature: float = 1.0):
+def soft_nearest_neighbor_loss(mat_x: np.ndarray, vec_y: np.ndarray, temperature: float = 1.0, normalize: bool = False):
     """
 
     :param mat_x: 2-dimensional feature matrix, (n_sample, n_feature)
@@ -17,6 +17,8 @@ def soft_nearest_neighbor_loss(mat_x: np.ndarray, vec_y: np.ndarray, temperature
     if n_sample >= 10000:
         warnings.warn(f"sample size is too large. there is the risk of out-of-memory error.")
 
+    if normalize:
+        mat_x = mat_x / np.linalg.norm(mat_x, axis=1, keepdims=True)
     # dist[i,j] = exp(-|x_i - x_j|_2^2 / T)
     mat_dist = np.exp(- _l2_distance_sq(mat_x, mat_x) / temperature)
 
@@ -33,7 +35,11 @@ def soft_nearest_neighbor_loss(mat_x: np.ndarray, vec_y: np.ndarray, temperature
         vec_num_y = np.sum(mat_dist_y, axis=1) - np.diag(mat_dist_y)
         vec_numerator[idx_y] = vec_num_y
 
+    # mask out isolated samples
+    vec_mask = (vec_numerator > 0.0)
+
     # calculate mean of the log value.
-    loss = - np.sum(np.log(vec_numerator) - np.log(vec_denominator)) / n_sample
+    vec_values = np.log(vec_numerator) - np.log(vec_denominator)
+    loss = - np.sum(vec_values[vec_mask]) / np.sum(vec_mask)
 
     return loss
