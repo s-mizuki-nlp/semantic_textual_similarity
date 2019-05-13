@@ -9,6 +9,8 @@ from lxml.etree import _Element, _ElementTree
 class WSDDatasetLoader(object):
 
     __AVAILABLE_RETURN_TYPE = ("tokens","attrs")
+    __ATTRIBUTES = "surface,pos,lemma,sensekey".split(",")
+    __ATTRIBUTE_INDEX = {attr:idx for idx, attr in enumerate(__ATTRIBUTES)}
 
     def __init__(self, train_file_path, gold_file_path, return_type="tokens", xpath_sentence="//sentence", verbose=False):
         assert return_type in self.__AVAILABLE_RETURN_TYPE, "`return_type` must be one of these:" + ",".join(self.__AVAILABLE_RETURN_TYPE)
@@ -36,30 +38,34 @@ class WSDDatasetLoader(object):
     def __len__(self):
         return len(self._xml_trainset.xpath(self._xpath_sentence))
 
-    def iter_over_specific_token(self, surface: Optional[Union[str, Iterable]] = None,
-                                 lemma: Optional[Union[str, Iterable]] = None):
-
-        def format(condition):
-            if condition is None:
-                return set()
-            elif isinstance(condition, str):
-                return set(condition)
-            else:
-                return set(condition)
-
-        conditions = {
-            "surface": format(surface),
-            "lemma": format(lemma)
-        }
-
-        iter_sentence = self.__iter__()
-        for sentence in iter_sentence:
-            pass
-
-
     @property
     def n_example(self):
         return self.__len__()
+
+    @property
+    def n_annotation(self):
+        sensekey_idx = self.get_attribute_index(attr_name="sensekey")
+        sentences = self._xml_trainset.xpath(self._xpath_sentence)
+        n_anno = 0
+        for sentence in sentences:
+            tup_lst_attr = self._parse_sentence_to_seqs_of_token_attrs(sentence)
+            lst_seneskey = tup_lst_attr[sensekey_idx]
+            n_anno += len(list(filter(bool, lst_seneskey)))
+        return n_anno
+
+    @property
+    def ATTRIBUTES(self):
+        return self.__ATTRIBUTES
+
+    @property
+    def ATTRIBUTE_INDEX(self):
+        return self.__ATTRIBUTE_INDEX
+
+    def get_attribute_index(self, attr_name: str):
+        return self.__ATTRIBUTE_INDEX.get(attr_name, None)
+
+    def token_attributes_to_dict(self, tup_token_attrs):
+        return dict((attr, value) for attr, value in zip(self.__ATTRIBUTES, tup_token_attrs) )
 
     def _load_gold_set(self) -> Dict[str, str]:
         dict_instance_to_sense_key = {}
