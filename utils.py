@@ -3,6 +3,7 @@
 
 import warnings
 import numpy as np
+import regex as re
 from distribution.distance import _l2_distance_sq
 
 def soft_nearest_neighbor_loss(mat_x: np.ndarray, vec_y: np.ndarray, temperature: float = 1.0, normalize: bool = False):
@@ -43,3 +44,10 @@ def soft_nearest_neighbor_loss(mat_x: np.ndarray, vec_y: np.ndarray, temperature
     loss = - np.sum(vec_values[vec_mask]) / np.sum(vec_mask)
 
     return loss
+
+_obj_elmo_conf = re.compile(r"elmo_[1-9]x[0-9]{1,4}_[0-9]{1,4}_[0-9]{1,4}")
+
+def extract_elmo_conf(path_elmo):
+    m = _obj_elmo_conf.search(path_elmo)
+    assert m is not None, "couldn't find elmo model specification."
+    return m.group()
