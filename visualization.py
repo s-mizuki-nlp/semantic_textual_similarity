@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding:utf-8 -*-
 
-from typing import Optional, Tuple, List
+from typing import Optional, Tuple, List, Iterable
 from matplotlib import pyplot as plt
 from matplotlib import ticker
 from matplotlib import colors
@@ -11,6 +11,34 @@ import pandas as pd
 import numpy as np
 
 _DEFAULT_FIG_SIZE = (8,8)
+
+def word_barplot(lst_word: Iterable[str], lst_score: Iterable[float], lst_word_attr: Optional[Iterable[str]] = None,
+                 color: Optional[str] = "orange", horizontal: Optional[bool] = True,
+                 fig_and_ax = None, figsize = None):
+
+    lst_y_dummy = [f"{word}_{idx}" for idx, word in enumerate(lst_word)]
+    if horizontal:
+        x = lst_score
+        y = lst_y_dummy
+    else:
+        x = lst_y_dummy
+        y = lst_score
+    if fig_and_ax is None:
+        fig, ax = plt.subplots(figsize=_DEFAULT_FIG_SIZE if figsize is None else figsize)
+    else:
+        fig, ax = fig_and_ax[0], fig_and_ax[1]
+    if lst_word_attr is not None:
+        color = None
+
+    ax = sns.barplot(x=x, y=y, dodge=False, hue=lst_word_attr, color=color, ax=ax)
+    if horizontal:
+        ax.set_yticklabels(lst_word)
+    else:
+        ax.set_xticklabels(lst_word)
+
+    return fig, ax
+
+
 
 def tile_plot(mat_dist, fig_and_ax=None, lst_ticker_x=None, lst_ticker_y=None, figsize=None, cmap="Reds",
               colorbar=True, tup_dist_min_max: Optional[Tuple[float, float]] = None, **kwargs):
