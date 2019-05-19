@@ -9,6 +9,7 @@ import numpy as np
 import scipy as sp
 from scipy.stats import multivariate_normal, norm
 from scipy.special import iv, eval_genlaguerre
+from scipy.spatial.distance import mahalanobis
 from scipy.misc import logsumexp
 from scipy import optimize
 from matplotlib import pyplot as plt
@@ -17,7 +18,7 @@ vector = np.array
 matrix = np.ndarray
 tensor = np.ndarray
 
-from .mixture import MultiVariateGaussianMixture, _mvn_isotropic_logpdf
+from .mixture import MultiVariateGaussianMixture, _mvn_isotropic_logpdf, _mvn_isotropic_mahalanobis_dist_sq
 
 
 class MultiVariateNormal(object):
@@ -74,11 +75,20 @@ class MultiVariateNormal(object):
 
     @property
     def entropy(self) -> float:
+        """
+        H[p(x)] = 0.5*ln(det(\Sigma)) + 0.5*D(1+ln(2\pi))
+        :return: entropy of the multivariate normal distribution
+        """
         e = multivariate_normal(mean=self._mu, cov=self._cov).entropy()
         return e
 
     @property
     def log_normalization_term(self) -> float:
+        """
+        ln(Z) = -0.5*ln(det(\Sigma)) - 0.5*D(ln(2\pi))
+            = - (H[p(x)] - 0.5 * D)
+        :return: log-normalization term of the multivariate normal distribution
+        """
         z = - (self.entropy - 0.5 * self._n_dim)
         return z
 
@@ -279,6 +289,32 @@ class MultiVariateNormal(object):
             raise NotImplementedError("unexpected input.")
 
         return ln_prob
+
+    def mahalanobis_distance_sq(self, vec_x: Union[vector, matrix]):
+        """
+        returns the square of the mahalanobis distance using mean and covariance of the distribution.
+        d = (x - \mu)^T \Sigma^{-1} (x - \mu)
+        -0.5*mahalanobis_distance_sq + log_normalization_term = logpdf
+
+        :param vec_x: observation(s)
+        :return: (array of) square of the mahalanobis distance.
+        """
+        if vec_x.ndim == 1:
+            if self._is_cov_diag:
+                dist = _mvn_isotropic_mahalanobis_dist_sq(vec_x, self._mu, self._cov)
+            else:
+                cov_inv = np.linalg.inv(self._cov)
+                dist = mahalanobis(vec_x, self._mu, cov_inv)**2
+        elif vec_x.ndim == 2:
+            if self._is_cov_diag:
+                dist = np.array([_mvn_isotropic_mahalanobis_dist_sq(x, self._mu, self._cov) for x in vec_x])
+            else:
+                cov_inv = np.linalg.inv(self._cov)
+                dist = np.array([mahalanobis(x, self._mu, cov_inv)**2 for x in vec_x])
+        else:
+            raise NotImplementedError("unexpected input.")
+
+        return dist
 
     def random(self, size: int):
         """

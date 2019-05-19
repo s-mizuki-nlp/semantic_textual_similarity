@@ -28,6 +28,14 @@ def _mvn_isotropic_logpdf(vec_x, vec_mu, mat_cov, eps=1E-5):
     q = np.sum(norm.logpdf(vec_z) - np.log(vec_std), axis=-1)
     return q
 
+def _mvn_isotropic_mahalanobis_dist_sq(vec_x, vec_mu, mat_cov, eps=1E-5):
+    """
+    mahalanobis distance of the observation on multivariate normal distribution with diagonal covariance matrix.
+    """
+    vec_std = np.maximum(eps, np.sqrt(np.diag(mat_cov)))
+    vec_z = (vec_x - vec_mu) / vec_std
+    d = np.sum(vec_z**2, axis=-1)
+    return d
 
 class MultiVariateGaussianMixture(object):
 
