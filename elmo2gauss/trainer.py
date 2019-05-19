@@ -12,6 +12,8 @@ from allennlp.commands.elmo import ElmoEmbedder
 from preprocess.corpora import Dictionary
 from preprocess.dataset_feeder import GeneralSentenceFeeder
 import numpy as np
+from scipy.stats import multivariate_normal
+from scipy.spatial.distance import mahalanobis
 from distribution.continuous import MultiVariateNormal
 from distribution import distance
 
@@ -222,6 +224,14 @@ class ELMo2Gauss(object):
         self._total_freq = None
         self._min_freq = None
 
+    def init_encoder(self, n_repeat: Optional[int] = 10):
+        """
+        allennlp's elmo encoder is `stateful` so that first several encoding may not be suitable for inference.
+        therefore, this method does warm-up manually.
+        """
+        s = "The on-line questionnaire was publicized in The Gazette and The Muse and by notices on campus bulletin boards .".split(" ")
+        for i in range(n_repeat):
+            _ = self.elmo_embedder.embed_sentence(s)
 
     def init_sims(self, inplace: bool = True):
         """
@@ -333,6 +343,34 @@ class ELMo2Gauss(object):
             lst_mat_w2v = map(self._subtract_mean, lst_mat_w2v)
 
         return list(lst_mat_w2v)
+
+    def sentence_to_word_vector_likelihood(self, sentence: List[str], oov: Optional[Any] = None,
+                                    normalize: Optional[bool] = False, subtract_sentence_mean: Optional[bool] = False) -> List[Union[float, Any]]:
+        lst_w2g = self.sentence_to_gaussians(sentence, ignore_error=False)
+        mat_w2v = self.sentence_to_word_vectors(sentence, normalize, subtract_sentence_mean)
+        lst_ret = []
+        for p_w2g, vec_w in zip(lst_w2g, mat_w2v):
+            if p_w2g is None:
+                ret = oov
+            else:
+                ret = p_w2g.logpdf(vec_w)
+            lst_ret.append(ret)
+
+        return lst_ret
+
+    def sentence_to_word_vector_mahalanobis(self, sentence: List[str], oov: Optional[Any] = None,
+                                            normalize: Optional[bool] = False, subtract_sentence_mean: Optional[bool] = False):
+        lst_w2g = self.sentence_to_gaussians(sentence, ignore_error=False)
+        mat_w2v = self.sentence_to_word_vectors(sentence, normalize, subtract_sentence_mean)
+        lst_ret = []
+        for p_w2g, vec_w in zip(lst_w2g, mat_w2v):
+            if p_w2g is None:
+                ret = oov
+            else:
+                ret = np.sqrt(p_w2g.mahalanobis_distance_sq(vec_w))
+            lst_ret.append(ret)
+
+        return lst_ret
 
     def train(self, dataset_feeder: GeneralSentenceFeeder,
               normalize: bool = False, subtract_sentence_mean: bool = False, ddof: int = 0):
