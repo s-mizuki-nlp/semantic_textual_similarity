@@ -362,10 +362,14 @@ class ELMo2Gauss(object):
 
         return lst_ret
 
-    def sentence_to_word_vector_mahalanobis(self, sentence: List[str], oov_repl: Optional[Any] = None,
+    def sentence_to_word_vector_mahalanobis(self, sentence: List[str], word_vectors: Optional[np.ndarray] = None,
+                                            oov_repl: Optional[Any] = None,
                                             normalize: Optional[bool] = False, subtract_sentence_mean: Optional[bool] = False):
         lst_w2g = self.sentence_to_gaussians(sentence, ignore_error=False)
-        mat_w2v = self.sentence_to_word_vectors(sentence, normalize, subtract_sentence_mean)
+        if word_vectors is None:
+            mat_w2v = self.sentence_to_word_vectors(sentence, normalize, subtract_sentence_mean)
+        else:
+            mat_w2v = word_vectors
         lst_ret = []
         for p_w2g, vec_w in zip(lst_w2g, mat_w2v):
             if p_w2g is None:
