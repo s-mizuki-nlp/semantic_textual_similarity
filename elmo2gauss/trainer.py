@@ -344,28 +344,32 @@ class ELMo2Gauss(object):
 
         return list(lst_mat_w2v)
 
-    def sentence_to_word_vector_likelihood(self, sentence: List[str], oov: Optional[Any] = None,
-                                    normalize: Optional[bool] = False, subtract_sentence_mean: Optional[bool] = False) -> List[Union[float, Any]]:
+    def sentence_to_word_vector_likelihood(self, sentence: List[str], word_vectors: Optional[np.ndarray] = None,
+                                           oov_repl: Optional[Any] = None,
+                                           normalize: Optional[bool] = False, subtract_sentence_mean: Optional[bool] = False) -> List[Union[float, Any]]:
         lst_w2g = self.sentence_to_gaussians(sentence, ignore_error=False)
-        mat_w2v = self.sentence_to_word_vectors(sentence, normalize, subtract_sentence_mean)
+        if word_vectors is None:
+            mat_w2v = self.sentence_to_word_vectors(sentence, normalize, subtract_sentence_mean)
+        else:
+            mat_w2v = word_vectors
         lst_ret = []
         for p_w2g, vec_w in zip(lst_w2g, mat_w2v):
             if p_w2g is None:
-                ret = oov
+                ret = oov_repl
             else:
                 ret = p_w2g.logpdf(vec_w)
             lst_ret.append(ret)
 
         return lst_ret
 
-    def sentence_to_word_vector_mahalanobis(self, sentence: List[str], oov: Optional[Any] = None,
+    def sentence_to_word_vector_mahalanobis(self, sentence: List[str], oov_repl: Optional[Any] = None,
                                             normalize: Optional[bool] = False, subtract_sentence_mean: Optional[bool] = False):
         lst_w2g = self.sentence_to_gaussians(sentence, ignore_error=False)
         mat_w2v = self.sentence_to_word_vectors(sentence, normalize, subtract_sentence_mean)
         lst_ret = []
         for p_w2g, vec_w in zip(lst_w2g, mat_w2v):
             if p_w2g is None:
-                ret = oov
+                ret = oov_repl
             else:
                 ret = np.sqrt(p_w2g.mahalanobis_distance_sq(vec_w))
             lst_ret.append(ret)
