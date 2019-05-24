@@ -316,6 +316,17 @@ class MultiVariateNormal(object):
 
         return dist
 
+    def cosine_similarity(self, vec_x: vector):
+        """
+        returns the cosine similarity between the input and mean vector
+        :param vec_x: observation
+        :return: cos(vec_x, \mu)
+        """
+        vec_y = self._mu
+        cosine = np.sum(vec_x*vec_y) / (np.linalg.norm(vec_x)*np.linalg.norm(vec_y))
+
+        return cosine
+
     def random(self, size: int):
         """
         generate random samples from the distribution.
