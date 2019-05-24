@@ -345,13 +345,23 @@ class ELMo2Gauss(object):
         return list(lst_mat_w2v)
 
     def sentence_to_word_vector_likelihood(self, sentence: List[str], word_vectors: Optional[np.ndarray] = None,
+                                           lst_gaussians: Optional[List[MultiVariateNormal]] = None,
                                            oov_repl: Optional[Any] = None,
                                            normalize: Optional[bool] = False, subtract_sentence_mean: Optional[bool] = False) -> List[Union[float, Any]]:
-        lst_w2g = self.sentence_to_gaussians(sentence, ignore_error=True)
+
+        # probability distributions
+        if lst_gaussians is None:
+            lst_w2g = self.sentence_to_gaussians(sentence, ignore_error=True)
+        else:
+            lst_w2g = lst_gaussians
+
+        # word vectors
         if word_vectors is None:
             mat_w2v = self.sentence_to_word_vectors(sentence, normalize, subtract_sentence_mean)
         else:
             mat_w2v = word_vectors
+
+        # inference
         lst_ret = []
         for p_w2g, vec_w in zip(lst_w2g, mat_w2v):
             if p_w2g is None:
@@ -363,13 +373,23 @@ class ELMo2Gauss(object):
         return lst_ret
 
     def sentence_to_word_vector_mahalanobis(self, sentence: List[str], word_vectors: Optional[np.ndarray] = None,
+                                            lst_gaussians: Optional[List[MultiVariateNormal]] = None,
                                             oov_repl: Optional[Any] = None,
                                             normalize: Optional[bool] = False, subtract_sentence_mean: Optional[bool] = False):
-        lst_w2g = self.sentence_to_gaussians(sentence, ignore_error=True)
+
+        # probability distributions
+        if lst_gaussians is None:
+            lst_w2g = self.sentence_to_gaussians(sentence, ignore_error=True)
+        else:
+            lst_w2g = lst_gaussians
+
+        # word vectors
         if word_vectors is None:
             mat_w2v = self.sentence_to_word_vectors(sentence, normalize, subtract_sentence_mean)
         else:
             mat_w2v = word_vectors
+
+        # inference
         lst_ret = []
         for p_w2g, vec_w in zip(lst_w2g, mat_w2v):
             if p_w2g is None:
