@@ -8,7 +8,7 @@ import pickle
 import numpy as np
 import scipy as sp
 from scipy.stats import multivariate_normal, norm
-from scipy.misc import logsumexp
+from scipy.special import logsumexp
 from scipy import optimize
 from matplotlib import pyplot as plt
 

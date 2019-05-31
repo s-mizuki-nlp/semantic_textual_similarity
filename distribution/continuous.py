@@ -10,7 +10,7 @@ import scipy as sp
 from scipy.stats import multivariate_normal, norm
 from scipy.special import iv, eval_genlaguerre
 from scipy.spatial.distance import mahalanobis
-from scipy.misc import logsumexp
+from scipy.special import logsumexp
 from scipy import optimize
 from matplotlib import pyplot as plt
 

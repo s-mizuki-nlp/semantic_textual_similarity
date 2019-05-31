@@ -2,7 +2,7 @@
 # -*- coding:utf-8 -*-
 
 import numpy as np
-from scipy.misc import logsumexp
+from scipy.special import logsumexp
 from scipy.linalg import sqrtm
 from sklearn.metrics.pairwise import euclidean_distances
 from typing import Optional
