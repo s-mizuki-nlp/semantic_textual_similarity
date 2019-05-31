@@ -10,6 +10,8 @@ import seaborn as sns
 import pandas as pd
 import numpy as np
 
+from utils import continuous_to_discrete
+
 _DEFAULT_FIG_SIZE = (8,8)
 
 def word_barplot(lst_word: Iterable[str], lst_score: Iterable[float], lst_word_attr: Optional[Iterable[str]] = None,
@@ -38,6 +40,36 @@ def word_barplot(lst_word: Iterable[str], lst_score: Iterable[float], lst_word_a
 
     return fig, ax
 
+def continuous_heatmap(dataframe, target_variable, explanatory_variable_x, explanatory_variable_y, discretizer_function=None,
+                       fig_and_ax=None, figsize=None, **kwargs):
+
+    if discretizer_function is None:
+        discretizer_function = lambda vec: continuous_to_discrete(vec, n_bin=30, interval_type="eq", interval_format="mean", value_format=".2g")
+
+    if fig_and_ax is None:
+        fig, ax = plt.subplots(figsize=_DEFAULT_FIG_SIZE if figsize is None else figsize)
+    else:
+        fig, ax = fig_and_ax[0], fig_and_ax[1]
+
+
+    lst_vars = [target_variable, explanatory_variable_x, explanatory_variable_y]
+    df_view = dataframe[lst_vars].copy()
+
+    for field_to, field_from in zip(["c_x","c_y"], [explanatory_variable_x, explanatory_variable_y]):
+        if isinstance(discretizer_function, dict):
+            func_c = discretizer_function.get(field_from, None)
+        else:
+            func_c = discretizer_function
+
+        df_view[field_to] = func_c(df_view[field_from])
+
+    df_view = df_view.groupby(by=["c_x","c_y"])[target_variable].mean()
+    df_view = df_view.reset_index(drop=False).pivot(index="c_y", columns="c_x", values=target_variable)
+    df_view = df_view.iloc[::-1]
+
+    ax = sns.heatmap(df_view, cmap="coolwarm", ax=ax, **kwargs)
+
+    return fig, ax
 
 
 def tile_plot(mat_dist, fig_and_ax=None, lst_ticker_x=None, lst_ticker_y=None, figsize=None, cmap="Reds",
