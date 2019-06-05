@@ -3,10 +3,12 @@
 
 from typing import List, Tuple, Optional, Union, Callable, Dict
 import warnings
+import regex as re
 import pandas as pd
 import numpy as np
+from scipy.special import gamma
+from scipy.special import digamma
 from sklearn.cluster import KMeans
-import regex as re
 from sklearn.feature_selection import mutual_info_regression
 from sklearn.preprocessing import LabelEncoder
 
@@ -222,3 +224,31 @@ def cross_mutual_information(dataframe: pd.DataFrame,
         mat_mi_x_y_z[idx_z,:] = vec_mi_x_z[idx_z] + vec_mi_x_y_cond_z
 
     return mat_mi_x_y_z
+
+
+def _beta_function(a, b):
+    ret = gamma(a)*gamma(b) / gamma(a+b)
+    return ret
+
+def _beta_distribution_entropy(a, b):
+    ret = np.log(_beta_function(a, b)) - (a - 1) * digamma(a) - (b - 1) * digamma(b) + (a + b - 2) * digamma(a + b)
+    if np.isfinite(ret):
+        return -ret
+    else:
+        return np.nan
+
+def estimate_beta_distribution_params(mean, std):
+    if std == 0.:
+        return np.nan, np.nan
+
+    z = mean*(1. - mean)/(std**2) - 1
+    a = mean*z
+    b = (1. - mean)*z
+    return a, b
+
+def relative_position_entropy(mean, std):
+    a, b = estimate_beta_distribution_params(mean, std)
+    if a is np.nan:
+        return np.nan
+    else:
+        return _beta_distribution_entropy(a, b)
