@@ -77,6 +77,10 @@ class Dictionary(object):
             return self._offset
 
     @property
+    def min_id(self) -> int:
+        return int(self._masking)
+
+    @property
     def offset(self) -> int:
         return self._offset
 
