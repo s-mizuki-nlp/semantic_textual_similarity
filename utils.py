@@ -14,6 +14,25 @@ from sklearn.preprocessing import LabelEncoder
 
 from distribution.distance import _l2_distance_sq
 
+def entropy_from_sparse_repr(vec_x_sparse):
+    v_prob_nonzero = vec_x_sparse / np.sum(vec_x_sparse)
+    h_nonzero = -np.sum(v_prob_nonzero * np.log(v_prob_nonzero))
+
+    return h_nonzero
+
+def smoothed_entropy_from_sparse_repr(vec_x_sparse, n_vocab, alpha=1.0):
+    n_zero = n_vocab - len(vec_x_sparse)
+    n_total = alpha*n_vocab + np.sum(vec_x_sparse)
+
+    prob_zero = alpha / n_total
+    h_zero = -prob_zero * np.log(prob_zero) * n_zero
+
+    v_prob_nonzero = (vec_x_sparse + alpha) / n_total
+    h_nonzero = -np.sum(v_prob_nonzero * np.log(v_prob_nonzero))
+    h = h_zero + h_nonzero
+
+    return h
+
 def soft_nearest_neighbor_loss(mat_x: np.ndarray, vec_y: np.ndarray, temperature: float = 1.0, normalize: bool = False):
     """
 
