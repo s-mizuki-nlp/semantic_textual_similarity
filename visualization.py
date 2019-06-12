@@ -14,6 +14,8 @@ from utils import continuous_to_discrete
 
 _DEFAULT_FIG_SIZE = (8,8)
 
+_AVAILABLE_MARKERS = ('o', 'v', '^', '<', '>', '8', 's', 'p', '*', 'h', 'H', 'D', 'd', 'P', 'X')
+
 def word_barplot(lst_word: Iterable[str], lst_score: Iterable[float], lst_word_attr: Optional[Iterable[str]] = None,
                  color: Optional[str] = "orange", horizontal: Optional[bool] = True,
                  fig_and_ax = None, figsize = None):
