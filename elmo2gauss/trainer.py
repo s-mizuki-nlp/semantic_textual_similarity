@@ -32,7 +32,7 @@ class ELMo2Gauss(object):
     __available_pooling_methods = tuple("mean,max,concat".split(","))
 
     def __init__(self, model_elmo: ElmoEmbedder, dictionary: Dictionary, extract_layer_ids: Tuple[int] = (0,1,2),
-                 pooling_method: str = "mean", verbose: bool = False):
+                 pooling_method: str = "mean", init_encoder: bool = True, verbose: bool = False):
 
         self._elmo = model_elmo
         self._dictionary = dictionary
@@ -64,6 +64,8 @@ class ELMo2Gauss(object):
             "l2_norm_mean": np.zeros(shape=(0,), dtype=np.float32),
             "l2_norm_var": np.zeros(shape=(0,), dtype=np.float32)
         }
+        if init_encoder:
+            self.init_encoder()
 
     def _pool_mean(self, t_mat_w2v: np.ndarray):
         return np.mean(t_mat_w2v[self._elmo_layer_ids,:,:], axis=0)
