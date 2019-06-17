@@ -9,7 +9,7 @@ import numpy as np
 from scipy.special import gamma
 from scipy.special import digamma
 from sklearn.cluster import KMeans
-from sklearn.feature_selection import mutual_info_regression
+from sklearn.feature_selection import mutual_info_regression, mutual_info_classif
 from sklearn.preprocessing import LabelEncoder
 
 from distribution.distance import _l2_distance_sq
@@ -136,7 +136,10 @@ def wrapper_mutual_information(dataframe: pd.DataFrame,
     vec_y = df_t[target_variable]
     categorical = np.where([v in lst_categorical_exp_variables for v in lst_explanatory_variables])[0]
 
-    vec_mi = mutual_info_regression(mat_x, vec_y, discrete_features=categorical)
+    if target_variable in lst_categorical_exp_variables:
+        vec_mi = mutual_info_classif(mat_x, vec_y, discrete_features=categorical)
+    else:
+        vec_mi = mutual_info_regression(mat_x, vec_y, discrete_features=categorical)
 
     return vec_mi
 
